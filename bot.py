@@ -726,6 +726,121 @@ async def help_command(ctx):
     embed.set_footer(text="Deployed on Railway | Free translation service")
     await ctx.send(embed=embed)
 
+
+# DEBUG ----------
+
+@bot.command(name="debugmsg")
+async def debug_message(ctx, *, text: str = None):
+    """Debug why auto-translate isn't working"""
+    if not text:
+        text = "Hello everyone!"
+    
+    print(f"\n" + "="*50)
+    print(f"🔍 DEBUG MESSAGE TRIGGERED")
+    print(f"="*50)
+    
+    # Check channel
+    channel_enabled = translator.is_channel_enabled(ctx.channel.id)
+    print(f"📌 Channel {ctx.channel.id} enabled: {channel_enabled}")
+    
+    # Check your language
+    your_lang = translator.get_user_language(ctx.author.id)
+    print(f"👤 Your language: {your_lang}")
+    
+    # Detect message language
+    detected = translator.detect_language(text)
+    print(f"🔍 Detected language: {detected}")
+    
+    # Check cooldown
+    cooldown_ok = translator.check_cooldown(ctx.author.id)
+    print(f"⏰ Cooldown check: {cooldown_ok}")
+    
+    # Simulate what on_message does
+    if not channel_enabled:
+        await ctx.send("❌ Channel not enabled! Use `!auto enable`")
+        return
+    
+    if not cooldown_ok:
+        await ctx.send("⚠️ On cooldown")
+        return
+    
+    if detected != SOURCE_LANGUAGE:
+        await ctx.send(f"⚠️ Message detected as `{detected}`, not `{SOURCE_LANGUAGE}`")
+        return
+    
+    # Check members
+    members = ctx.channel.members
+    print(f"👥 Members in channel: {len(members)}")
+    
+    user_languages = {}
+    for member in members:
+        if member.bot or member.id == ctx.author.id:
+            continue
+        
+        member_lang = translator.get_user_language(member.id)
+        print(f"   👤 {member.display_name}: {member_lang}")
+        
+        if member_lang != SOURCE_LANGUAGE:
+            user_languages[member.id] = member_lang
+    
+    print(f"🎯 Users needing translation: {len(user_languages)}")
+    print(f"🎯 User languages: {user_languages}")
+    
+    if not user_languages:
+        await ctx.send("❌ No users need translation (all have English set or no users in channel)")
+        return
+    
+    # Try to create thread
+    try:
+        print("🔄 Attempting to create thread...")
+        thread = await ctx.message.create_thread(
+            name=f"DEBUG Translations for {ctx.author.display_name}",
+            auto_archive_duration=60
+        )
+        print(f"✅ Thread created: {thread.name}")
+        
+        # Test translation
+        test_lang = list(user_languages.values())[0]
+        print(f"🔄 Testing translation to {test_lang}...")
+        translated = translator.translate_text(text, test_lang)
+        print(f"✅ Translation result: {translated[:50]}...")
+        
+        if translated:
+            await thread.send(f"🇺🇸 **Original:** {text}")
+            await thread.send(f"🌐 **Test translation ({test_lang}):** {translated}")
+            await thread.send("✅ **DEBUG:** Auto-translate logic is working!")
+            await ctx.send(f"✅ Debug complete! Check thread: {thread.mention}")
+        else:
+            await thread.send("❌ Translation failed - API might be down")
+            await ctx.send("❌ Translation failed")
+            
+    except Exception as e:
+        print(f"❌ Thread creation error: {e}")
+        await ctx.send(f"❌ Thread creation failed: {str(e)}")
+    
+    print("="*50 + "\n")
+
+@bot.command(name="fix")
+async def fix_all(ctx):
+    """Fix common issues"""
+    # Enable channel
+    translator.enable_channel(ctx.channel.id)
+    
+    # Set your language to Vietnamese
+    translator.set_user_language(ctx.author.id, "vi")
+    
+    embed = discord.Embed(
+        title="🔧 Auto-Fix Applied",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Channel", value="✅ Enabled for auto-translate", inline=False)
+    embed.add_field(name="Your Language", value="✅ Set to Vietnamese (vi)", inline=False)
+    embed.add_field(name="Next Step", value="Send `!debugmsg Hello` to test", inline=False)
+    
+    await ctx.send(embed=embed)
+
+#END DEBUG--------
+
 # ========== RUN BOT ==========
 if __name__ == "__main__":
     token = os.getenv('DISCORD_BOT_TOKEN')
