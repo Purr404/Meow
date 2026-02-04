@@ -53,7 +53,7 @@ class SelectiveTranslator:
         print("✅ Translator initialized with Google Translate")
 
 # DATABASE-----
-def setup_database(self):
+    def setup_database(self):
         """Setup SQLite database for user preferences"""
         conn = sqlite3.connect('selective_translations.db')
         cursor = conn.cursor()
