@@ -1,12 +1,12 @@
 import discord
 from discord.ext import commands
+from discord import ui, SelectOption
 import os
 from dotenv import load_dotenv
 import asyncio
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from googletrans import Translator as GoogleTranslator
-import re
 import logging
 from contextlib import closing
 import hashlib
@@ -17,46 +17,41 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('translator_bot.log'),
-        logging.StreamHandler()
-    ]
 )
 logger = logging.getLogger(__name__)
 
 # ========== CONFIGURATION ==========
 SOURCE_LANGUAGE = "en"
-MAX_TEXT_LENGTH = 1000
-MIN_TEXT_LENGTH = 3
-COOLDOWN_SECONDS = 30
+MIN_TEXT_LENGTH = 2
+COOLDOWN_SECONDS = 5  # Reduced cooldown for better UX
 
-# Language mapping with flags and names
+# Language mapping with flags
 LANGUAGES = {
-    'en': {'name': 'English', 'flag': '🇺🇸', 'emoji': '🇺🇸'},
-    'es': {'name': 'Spanish', 'flag': '🇪🇸', 'emoji': '🇪🇸'},
-    'fr': {'name': 'French', 'flag': '🇫🇷', 'emoji': '🇫🇷'},
-    'de': {'name': 'German', 'flag': '🇩🇪', 'emoji': '🇩🇪'},
-    'it': {'name': 'Italian', 'flag': '🇮🇹', 'emoji': '🇮🇹'},
-    'pt': {'name': 'Portuguese', 'flag': '🇵🇹', 'emoji': '🇵🇹'},
-    'ru': {'name': 'Russian', 'flag': '🇷🇺', 'emoji': '🇷🇺'},
-    'ja': {'name': 'Japanese', 'flag': '🇯🇵', 'emoji': '🇯🇵'},
-    'ko': {'name': 'Korean', 'flag': '🇰🇷', 'emoji': '🇰🇷'},
-    'zh': {'name': 'Chinese', 'flag': '🇨🇳', 'emoji': '🇨🇳'},
-    'ar': {'name': 'Arabic', 'flag': '🇸🇦', 'emoji': '🇸🇦'},
-    'hi': {'name': 'Hindi', 'flag': '🇮🇳', 'emoji': '🇮🇳'},
-    'vi': {'name': 'Vietnamese', 'flag': '🇻🇳', 'emoji': '🇻🇳'},
-    'th': {'name': 'Thai', 'flag': '🇹🇭', 'emoji': '🇹🇭'},
-    'id': {'name': 'Indonesian', 'flag': '🇮🇩', 'emoji': '🇮🇩'},
-    'tr': {'name': 'Turkish', 'flag': '🇹🇷', 'emoji': '🇹🇷'},
-    'pl': {'name': 'Polish', 'flag': '🇵🇱', 'emoji': '🇵🇱'},
-    'nl': {'name': 'Dutch', 'flag': '🇳🇱', 'emoji': '🇳🇱'},
-    'sv': {'name': 'Swedish', 'flag': '🇸🇪', 'emoji': '🇸🇪'},
-    'da': {'name': 'Danish', 'flag': '🇩🇰', 'emoji': '🇩🇰'},
-    'fi': {'name': 'Finnish', 'flag': '🇫🇮', 'emoji': '🇫🇮'},
-    'no': {'name': 'Norwegian', 'flag': '🇳🇴', 'emoji': '🇳🇴'},
+    'en': {'name': 'English', 'flag': '🇺🇸'},
+    'es': {'name': 'Spanish', 'flag': '🇪🇸'},
+    'fr': {'name': 'French', 'flag': '🇫🇷'},
+    'de': {'name': 'German', 'flag': '🇩🇪'},
+    'it': {'name': 'Italian', 'flag': '🇮🇹'},
+    'pt': {'name': 'Portuguese', 'flag': '🇵🇹'},
+    'ru': {'name': 'Russian', 'flag': '🇷🇺'},
+    'ja': {'name': 'Japanese', 'flag': '🇯🇵'},
+    'ko': {'name': 'Korean', 'flag': '🇰🇷'},
+    'zh': {'name': 'Chinese', 'flag': '🇨🇳'},
+    'ar': {'name': 'Arabic', 'flag': '🇸🇦'},
+    'hi': {'name': 'Hindi', 'flag': '🇮🇳'},
+    'vi': {'name': 'Vietnamese', 'flag': '🇻🇳'},
+    'th': {'name': 'Thai', 'flag': '🇹🇭'},
+    'id': {'name': 'Indonesian', 'flag': '🇮🇩'},
+    'tr': {'name': 'Turkish', 'flag': '🇹🇷'},
+    'pl': {'name': 'Polish', 'flag': '🇵🇱'},
+    'nl': {'name': 'Dutch', 'flag': '🇳🇱'},
+    'sv': {'name': 'Swedish', 'flag': '🇸🇪'},
+    'da': {'name': 'Danish', 'flag': '🇩🇰'},
+    'fi': {'name': 'Finnish', 'flag': '🇫🇮'},
+    'no': {'name': 'Norwegian', 'flag': '🇳🇴'},
 }
 
-# Reverse mapping: flag emoji to language code
+# Flag to language mapping
 FLAG_TO_LANG = {
     '🇺🇸': 'en', '🇪🇸': 'es', '🇫🇷': 'fr', '🇩🇪': 'de',
     '🇮🇹': 'it', '🇵🇹': 'pt', '🇷🇺': 'ru', '🇯🇵': 'ja',
@@ -65,6 +60,149 @@ FLAG_TO_LANG = {
     '🇵🇱': 'pl', '🇳🇱': 'nl', '🇸🇪': 'sv', '🇩🇰': 'da',
     '🇫🇮': 'fi', '🇳🇴': 'no'
 }
+
+# ========== UI COMPONENTS ==========
+class LanguageSelectView(ui.View):
+    def __init__(self, user_id, translator):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+        self.translator = translator
+        
+        # Create select menu options
+        options = []
+        for code, info in LANGUAGES.items():
+            options.append(SelectOption(
+                label=info['name'],
+                value=code,
+                emoji=info['flag'],
+                description=f"Code: {code}"
+            ))
+        
+        # Split into multiple select menus if needed (Discord limit: 25 options per menu)
+        self.select_menus = []
+        for i in range(0, len(options), 25):
+            select = ui.Select(
+                placeholder="Select your language...",
+                options=options[i:i+25],
+                custom_id=f"lang_select_{i}"
+            )
+            select.callback = self.select_callback
+            self.add_item(select)
+            self.select_menus.append(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you!", ephemeral=True)
+            return
+        
+        lang_code = interaction.data['values'][0]
+        lang_info = LANGUAGES.get(lang_code)
+        
+        # Save user preference
+        self.translator.set_user_language(self.user_id, lang_code)
+        
+        embed = discord.Embed(
+            title="✅ Language Set",
+            description=f"Your language has been set to:\n{lang_info['flag']} **{lang_info['name']}** ({lang_code})",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="What happens now?",
+            value="• English messages will be auto-translated for you\n• Use `!translate [lang] [text]` for manual translations",
+            inline=False
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=None)
+        self.stop()
+
+class FlagTranslationView(ui.View):
+    def __init__(self, message_id, translator):
+        super().__init__(timeout=300)
+        self.message_id = message_id
+        self.translator = translator
+        
+        # Create flag select menu
+        options = []
+        for code, info in LANGUAGES.items():
+            if code != 'en':  # Don't include English (source language)
+                options.append(SelectOption(
+                    label=info['name'],
+                    value=code,
+                    emoji=info['flag'],
+                    description=f"Translate to {info['name']}"
+                ))
+        
+        # Split into chunks if needed
+        for i in range(0, len(options), 25):
+            select = ui.Select(
+                placeholder="Select a language to translate...",
+                options=options[i:i+25],
+                custom_id=f"flag_select_{i}"
+            )
+            select.callback = self.flag_select_callback
+            self.add_item(select)
+
+    async def flag_select_callback(self, interaction: discord.Interaction):
+        lang_code = interaction.data['values'][0]
+        lang_info = LANGUAGES.get(lang_code)
+        
+        # Get the original message
+        try:
+            message = await interaction.channel.fetch_message(self.message_id)
+            
+            # Check if message is from bot
+            if message.author.bot:
+                await interaction.response.send_message("Cannot translate bot messages.", ephemeral=True)
+                return
+            
+            # Translate the message
+            translated = self.translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
+            
+            if not translated:
+                await interaction.response.send_message("Translation failed. Please try again.", ephemeral=True)
+                return
+            
+            # Create embed
+            embed = discord.Embed(color=discord.Color.blue())
+            embed.set_author(
+                name=f"Original by {message.author.display_name}",
+                icon_url=message.author.avatar.url if message.author.avatar else None
+            )
+            
+            # Original text
+            if len(message.content) > 500:
+                original_display = message.content[:497] + "..."
+            else:
+                original_display = message.content
+            
+            embed.add_field(
+                name=f"🇺🇸 Original",
+                value=original_display,
+                inline=False
+            )
+            
+            # Translated text
+            if len(translated) > 500:
+                translated_display = translated[:497] + "..."
+            else:
+                translated_display = translated
+            
+            embed.add_field(
+                name=f"{lang_info['flag']} {lang_info['name']}",
+                value=translated_display,
+                inline=False
+            )
+            
+            # Send as reply to original message
+            await interaction.response.send_message(
+                f"**Translation requested by {interaction.user.mention}**",
+                embed=embed,
+                mention_author=False
+            )
+            
+        except Exception as e:
+            logger.error(f"Flag translation error: {e}")
+            await interaction.response.send_message("Error translating message.", ephemeral=True)
 
 # ========== TRANSLATOR ==========
 class SelectiveTranslator:
@@ -117,72 +255,59 @@ class SelectiveTranslator:
     def translate_text(self, text, target_lang, source_lang="auto"):
         """Translate text using Google Translate"""
         try:
-            # Clean the text
             text = text.strip()
-            if not text or len(text) < 2:
+            if not text or len(text) < MIN_TEXT_LENGTH:
                 return None
             
             # Cache key
             cache_key = hashlib.md5(f"{text}:{target_lang}:{source_lang}".encode()).hexdigest()
             
             # Check cache
-            cached = self._get_cached_translation(cache_key)
-            if cached:
-                return cached
+            if cache_key in self.translation_cache:
+                return self.translation_cache[cache_key]
             
             # Translate
             logger.info(f"Translating: '{text[:50]}...' → {target_lang}")
-            result = self.google_translator.translate(
-                text, 
-                dest=target_lang, 
-                src=source_lang
-            )
+            result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
             
             if result and result.text:
-                # Cache the result
-                self._cache_translation(cache_key, text, result.text, target_lang, source_lang)
+                self.translation_cache[cache_key] = result.text
                 return result.text
             return None
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return None
 
-    def _get_cached_translation(self, cache_key):
-        """Get translation from cache"""
-        # Memory cache
-        if cache_key in self.translation_cache:
-            return self.translation_cache[cache_key]
+    def is_english_text(self, text):
+        """Better English detection - translate ALL English messages"""
+        # Clean the text
+        text = text.lower().strip()
         
-        # Database cache
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT translated_text FROM translation_cache WHERE cache_key = ?",
-                    (cache_key,)
-                )
-                result = cursor.fetchone()
-                if result:
-                    self.translation_cache[cache_key] = result[0]
-                    return result[0]
-        except Exception as e:
-            logger.error(f"Cache error: {e}")
-        return None
-
-    def _cache_translation(self, cache_key, original_text, translated_text, target_lang, source_lang):
-        """Cache translation"""
-        self.translation_cache[cache_key] = translated_text
+        # Check if text is too short
+        if len(text) < MIN_TEXT_LENGTH:
+            return False
         
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO translation_cache 
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ''', (cache_key, original_text, translated_text, target_lang, source_lang))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Cache save error: {e}")
+        # Common English words and patterns
+        english_indicators = [
+            'the', 'and', 'you', 'that', 'have', 'for', 'with', 'this',
+            'are', 'not', 'but', 'what', 'all', 'was', 'can', 'your',
+            'there', 'their', 'they', 'like', 'just', 'know', 'will',
+            'about', 'how', 'which', 'when', 'where', 'who', 'why',
+            'good', 'more', 'some', 'time', 'people', 'year', 'day',
+            'thing', 'make', 'take', 'come', 'look', 'want', 'need',
+            'thank', 'thanks', 'hello', 'hi', 'hey', 'please', 'sorry'
+        ]
+        
+        # Check for English words
+        text_words = set(text.split())
+        english_count = sum(1 for word in english_indicators if word in text_words)
+        
+        # If we found at least 1 English indicator word, consider it English
+        # OR if it's mostly Latin characters
+        latin_chars = sum(1 for c in text if 'a' <= c <= 'z' or c == ' ')
+        latin_percentage = latin_chars / len(text) if text else 0
+        
+        return english_count > 0 or latin_percentage > 0.7
 
     def get_user_language(self, user_id):
         """Get user's preferred language"""
@@ -270,92 +395,58 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 translator = SelectiveTranslator()
 
 # ========== HELPER FUNCTIONS ==========
-async def create_translation_embed(original_message, translated_text, target_lang, translator_name="Google Translate"):
-    """Create a clean embed for translations"""
-    lang_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'emoji': '🌐'})
+async def send_translation_embed(original_message, translated_text, target_lang, requesting_user=None):
+    """Create and send translation embed"""
+    lang_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'flag': '🌐'})
     
-    embed = discord.Embed(
-        color=discord.Color.blue()
-    )
+    embed = discord.Embed(color=discord.Color.blue())
     
-    # Set author from original message
+    # Set author
     embed.set_author(
-        name=f"{original_message.author.display_name}",
+        name=f"Message by {original_message.author.display_name}",
         icon_url=original_message.author.avatar.url if original_message.author.avatar else None
     )
     
-    # Original text (truncated if too long)
+    # Original text
     original_display = original_message.content
-    if len(original_display) > 500:
-        original_display = original_display[:497] + "..."
+    if len(original_display) > 800:
+        original_display = original_display[:797] + "..."
     
     embed.add_field(
-        name=f"🇺🇸 Original (English)",
+        name=f"🇺🇸 Original",
         value=original_display,
         inline=False
     )
     
     # Translated text
     translated_display = translated_text
-    if len(translated_display) > 500:
-        translated_display = translated_display[:497] + "..."
+    if len(translated_display) > 800:
+        translated_display = translated_display[:797] + "..."
     
     embed.add_field(
-        name=f"{lang_info['emoji']} {lang_info['name']} Translation",
+        name=f"{lang_info['flag']} {lang_info['name']}",
         value=translated_display,
         inline=False
     )
     
-    # Footer with metadata
-    embed.set_footer(
-        text=f"Translated via {translator_name} • React with a flag to translate!"
-    )
+    # Add flag reaction UI
+    view = FlagTranslationView(original_message.id, translator)
     
-    return embed
-
-async def send_auto_translation(message, target_lang, mention_user=False):
-    """Send an auto-translation for a message"""
-    try:
-        translated = translator.translate_text(message.content, target_lang, SOURCE_LANGUAGE)
-        if not translated:
-            return False
-        
-        # Create embed
-        embed = await create_translation_embed(message, translated, target_lang)
-        
-        # Send the translation
-        if mention_user:
-            # Get user who needs translation
-            user_lang = translator.get_user_language(message.author.id)
-            if user_lang == target_lang:
-                reply = await message.reply(
-                    f"**Translation for you:**",
-                    embed=embed,
-                    mention_author=False
-                )
-            else:
-                reply = await message.reply(
-                    embed=embed,
-                    mention_author=False
-                )
-        else:
-            reply = await message.reply(
-                embed=embed,
-                mention_author=False
-            )
-        
-        # Add flag reactions for quick translations
-        popular_flags = ['🇪🇸', '🇫🇷', '🇩🇪', '🇯🇵', '🇰🇷', '🇻🇳', '🇨🇳']
-        for flag in popular_flags[:3]:  # Add 3 popular flags
-            try:
-                await reply.add_reaction(flag)
-            except:
-                pass
-        
-        return True
-    except Exception as e:
-        logger.error(f"Error sending auto-translation: {e}")
-        return False
+    if requesting_user:
+        # Send as reply with mention
+        return await original_message.reply(
+            f"**Translation for {requesting_user.mention}**",
+            embed=embed,
+            view=view,
+            mention_author=False
+        )
+    else:
+        # Send as regular reply
+        return await original_message.reply(
+            embed=embed,
+            view=view,
+            mention_author=False
+        )
 
 # ========== EVENT HANDLERS ==========
 @bot.event
@@ -364,7 +455,7 @@ async def on_ready():
     
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="!help | React with flags to translate!"
+        name="!help | Auto-translate"
     ))
 
 @bot.event
@@ -388,167 +479,62 @@ async def on_message(message):
     if len(message.content.strip()) < MIN_TEXT_LENGTH:
         return
     
-    # Detect if message is in English (simple check)
-    english_words = ['the', 'and', 'you', 'that', 'have', 'for', 'with', 'this', 'thank', 'thanks']
-    text_lower = message.content.lower()
-    is_english = any(f' {word} ' in f' {text_lower} ' for word in english_words)
-    
-    if not is_english:
+    # Check if message is in English (translate ALL English messages)
+    if not translator.is_english_text(message.content):
         return
     
     logger.info(f"📨 Auto-translating message from {message.author}")
     
-    # Get all members who can see this channel
+    # Get all members in the channel
     try:
         members = []
         if isinstance(message.channel, discord.TextChannel):
             members = [member for member in message.channel.members if not member.bot]
         
-        # Find users who need translation
-        users_to_translate = {}
+        # Find unique languages needed
+        languages_needed = set()
         for member in members:
             user_lang = translator.get_user_language(member.id)
-            if user_lang != SOURCE_LANGUAGE and user_lang not in users_to_translate:
-                users_to_translate[user_lang] = member.id
+            if user_lang != SOURCE_LANGUAGE:
+                languages_needed.add((user_lang, member.id))
         
         # Send translations for each language
-        for lang_code in users_to_translate.keys():
+        for lang_code, user_id in languages_needed:
             if lang_code in LANGUAGES:
-                await asyncio.sleep(0.5)  # Small delay between translations
-                await send_auto_translation(message, lang_code, mention_user=True)
+                # Translate
+                translated = translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
+                if translated:
+                    # Get user mention
+                    user = message.guild.get_member(user_id)
+                    if user:
+                        # Send translation
+                        await send_translation_embed(message, translated, lang_code, user)
+                        await asyncio.sleep(0.5)  # Small delay between translations
                 
     except Exception as e:
         logger.error(f"Error in auto-translation: {e}")
 
-@bot.event
-async def on_reaction_add(reaction, user):
-    """Handle flag reactions for on-demand translation"""
-    # Ignore bot reactions
-    if user.bot:
-        return
-    
-    # Check if reaction is a flag emoji
-    emoji_str = str(reaction.emoji)
-    if emoji_str not in FLAG_TO_LANG:
-        return
-    
-    # Get the message
-    message = reaction.message
-    
-    # Don't translate bot messages or translations
-    if message.author.bot:
-        return
-    
-    # Check cooldown
-    if not translator.check_cooldown(user.id):
-        try:
-            await reaction.remove(user)
-        except:
-            pass
-        return
-    
-    lang_code = FLAG_TO_LANG[emoji_str]
-    lang_info = LANGUAGES.get(lang_code)
-    
-    # Translate the message
-    async with message.channel.typing():
-        translated = translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
-        
-        if not translated:
-            try:
-                await reaction.remove(user)
-            except:
-                pass
-            return
-        
-        # Create embed
-        embed = await create_translation_embed(message, translated, lang_code)
-        
-        # Send as reply to the reaction
-        try:
-            # Check if we already translated this message for this language
-            async for msg in message.channel.history(limit=10):
-                if msg.author == bot.user and msg.reference and msg.reference.message_id == message.id:
-                    # Check if embed already has this language
-                    for field in msg.embeds[0].fields if msg.embeds else []:
-                        if lang_info['name'] in field.name:
-                            # Already translated, just acknowledge
-                            try:
-                                await reaction.remove(user)
-                            except:
-                                pass
-                            return
-            
-            # Send new translation
-            reply = await message.reply(
-                f"**{lang_info['emoji']} Translation requested by {user.mention}**",
-                embed=embed,
-                mention_author=False
-            )
-            
-            # Add other popular flag reactions
-            popular_flags = ['🇪🇸', '🇫🇷', '🇩🇪', '🇯🇵', '🇰🇷', '🇻🇳', '🇨🇳']
-            for flag in popular_flags[:3]:
-                if flag != emoji_str:
-                    try:
-                        await reply.add_reaction(flag)
-                    except:
-                        pass
-            
-        except Exception as e:
-            logger.error(f"Error sending reaction translation: {e}")
-
 # ========== COMMANDS ==========
 @bot.command(name="mylang")
-async def set_language(ctx, lang_code: str = None):
-    """Set your preferred language for auto-translation"""
-    if not lang_code:
-        current = translator.get_user_language(ctx.author.id)
-        lang_info = LANGUAGES.get(current, {'name': current.upper(), 'emoji': '🌐'})
-        
-        embed = discord.Embed(
-            title="🌍 Your Language Settings",
-            description=f"**Current language:** {lang_info['emoji']} {lang_info['name']}",
-            color=discord.Color.blue()
-        )
+async def set_language(ctx):
+    """Set your preferred language with dropdown menu"""
+    embed = discord.Embed(
+        title="🌍 Select Your Language",
+        description="Choose your preferred language from the dropdown menu below:",
+        color=discord.Color.blue()
+    )
+    
+    current_lang = translator.get_user_language(ctx.author.id)
+    if current_lang in LANGUAGES:
+        current_info = LANGUAGES[current_lang]
         embed.add_field(
-            name="How to change:",
-            value="Use `!mylang [code]`\nExample: `!mylang vi`",
+            name="Current Language",
+            value=f"{current_info['flag']} **{current_info['name']}**",
             inline=False
         )
-        await ctx.send(embed=embed)
-        return
     
-    lang_code = lang_code.lower()
-    
-    if lang_code not in LANGUAGES:
-        # Show available languages
-        lang_list = "\n".join([f"{info['emoji']} `{code}` - {info['name']}" 
-                              for code, info in list(LANGUAGES.items())[:15]])
-        
-        embed = discord.Embed(
-            title="❌ Invalid Language Code",
-            description=f"Available languages:\n{lang_list}",
-            color=discord.Color.red()
-        )
-        embed.set_footer(text="Use !langs to see all languages")
-        await ctx.send(embed=embed)
-        return
-    
-    translator.set_user_language(ctx.author.id, lang_code)
-    lang_info = LANGUAGES[lang_code]
-    
-    embed = discord.Embed(
-        title="✅ Language Set",
-        description=f"Your language has been set to:\n{lang_info['emoji']} **{lang_info['name']}**",
-        color=discord.Color.green()
-    )
-    embed.add_field(
-        name="What happens now?",
-        value="• English messages will be auto-translated for you\n• You can react with flags to translate any message",
-        inline=False
-    )
-    await ctx.send(embed=embed)
+    view = LanguageSelectView(ctx.author.id, translator)
+    await ctx.send(embed=embed, view=view)
 
 @bot.command(name="auto")
 @commands.has_permissions(manage_channels=True)
@@ -558,17 +544,12 @@ async def toggle_auto(ctx, action: str = None):
         enabled = translator.is_channel_enabled(ctx.channel.id)
         
         embed = discord.Embed(
-            title="⚙️ Auto-Translate Settings",
+            title="⚙️ Auto-Translate Status",
             color=discord.Color.blue()
         )
         
         if enabled:
             embed.description = "✅ **ENABLED** in this channel"
-            embed.add_field(
-                name="How it works:",
-                value="1. Users set language with `!mylang [code]`\n2. English messages auto-translate\n3. React with flags for quick translations",
-                inline=False
-            )
         else:
             embed.description = "❌ **DISABLED** in this channel"
             embed.add_field(
@@ -587,37 +568,21 @@ async def toggle_auto(ctx, action: str = None):
         
         embed = discord.Embed(
             title="✅ Auto-Translate Enabled",
-            description="This channel will now auto-translate English messages!",
+            description="This channel will now auto-translate English messages to users' preferred languages.",
             color=discord.Color.green()
         )
         embed.add_field(
             name="Quick Setup:",
-            value="1. `!mylang vi` - Set to Vietnamese\n2. `!mylang es` - Set to Spanish\n3. Send English message → Auto-translation!",
+            value="1. Users use `!mylang` to select their language\n2. Send English messages\n3. Messages auto-translate for each user",
             inline=False
         )
         embed.add_field(
             name="Additional Features:",
-            value="• React with flag emojis to translate any message\n• Use `!translate [lang] [text]` for manual translations",
+            value="• Use the dropdown menu on any translation to translate to other languages\n• Use `!translate [lang] [text]` for manual translations",
             inline=False
         )
         
         await ctx.send(embed=embed)
-        
-        # Send a test message
-        test_embed = discord.Embed(
-            title="🧪 Test Message",
-            description="Hello everyone! Welcome to the channel.",
-            color=discord.Color.gold()
-        )
-        test_embed.set_footer(text="This should auto-translate for users with different languages set")
-        test_msg = await ctx.send(embed=test_embed)
-        
-        # Add flag reactions
-        for flag in ['🇪🇸', '🇫🇷', '🇯🇵', '🇰🇷', '🇻🇳']:
-            try:
-                await test_msg.add_reaction(flag)
-            except:
-                pass
 
     elif action == 'disable':
         translator.disable_channel(ctx.channel.id)
@@ -642,27 +607,34 @@ async def list_languages(ctx):
     """List all available languages"""
     embed = discord.Embed(
         title="🌍 Available Languages",
-        description="Set your language with `!mylang [code]`",
+        description="Set your language with `!mylang` command",
         color=discord.Color.blue()
     )
     
-    # Split languages into two columns
-    langs_list = list(LANGUAGES.items())
-    mid = len(langs_list) // 2
+    # Group languages
+    popular = []
+    asian = []
+    european = []
+    others = []
     
-    col1 = "\n".join([f"{info['emoji']} `{code}` - {info['name']}" 
-                     for code, info in langs_list[:mid]])
-    col2 = "\n".join([f"{info['emoji']} `{code}` - {info['name']}" 
-                     for code, info in langs_list[mid:]])
+    for code, info in LANGUAGES.items():
+        if code in ['es', 'fr', 'de', 'it', 'pt']:
+            european.append(f"{info['flag']} `{code}` - {info['name']}")
+        elif code in ['ja', 'ko', 'zh', 'vi', 'th']:
+            asian.append(f"{info['flag']} `{code}` - {info['name']}")
+        elif code in ['ru', 'ar', 'hi', 'tr']:
+            others.append(f"{info['flag']} `{code}` - {info['name']}")
+        elif code != 'en':
+            popular.append(f"{info['flag']} `{code}` - {info['name']}")
     
-    embed.add_field(name="Languages A-M", value=col1, inline=True)
-    embed.add_field(name="Languages N-Z", value=col2, inline=True)
-    
-    embed.add_field(
-        name="🎯 Quick Picks",
-        value="• 🇻🇳 `vi` - Vietnamese\n• 🇰🇷 `ko` - Korean\n• 🇯🇵 `ja` - Japanese\n• 🇪🇸 `es` - Spanish\n• 🇫🇷 `fr` - French",
-        inline=False
-    )
+    if popular:
+        embed.add_field(name="Popular", value="\n".join(popular[:8]), inline=True)
+    if european:
+        embed.add_field(name="European", value="\n".join(european[:8]), inline=True)
+    if asian:
+        embed.add_field(name="Asian", value="\n".join(asian), inline=True)
+    if others:
+        embed.add_field(name="Others", value="\n".join(others[:8]), inline=False)
     
     await ctx.send(embed=embed)
 
@@ -699,13 +671,21 @@ async def translate_command(ctx, target_lang: str = None, *, text: str = None):
             embed.set_author(name=f"Translation by {ctx.author.display_name}", 
                            icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
             
-            if len(text) > 500:
-                text = text[:497] + "..."
-            if len(translated) > 500:
-                translated = translated[:497] + "..."
+            # Original text
+            if len(text) > 800:
+                original_display = text[:797] + "..."
+            else:
+                original_display = text
             
-            embed.add_field(name=f"🇺🇸 English", value=text, inline=False)
-            embed.add_field(name=f"{lang_info['emoji']} {lang_info['name']}", value=translated, inline=False)
+            embed.add_field(name=f"🇺🇸 Original", value=original_display, inline=False)
+            
+            # Translated text
+            if len(translated) > 800:
+                translated_display = translated[:797] + "..."
+            else:
+                translated_display = translated
+            
+            embed.add_field(name=f"{lang_info['flag']} {lang_info['name']}", value=translated_display, inline=False)
             
             await ctx.send(embed=embed)
         else:
@@ -735,19 +715,19 @@ async def help_command(ctx):
     """Show help menu"""
     embed = discord.Embed(
         title="🤖 Translation Bot Help",
-        description="**Auto-translates English messages + Flag reactions for quick translations**",
+        description="**Auto-translates English messages to users' preferred languages**",
         color=discord.Color.blue()
     )
     
     embed.add_field(
         name="🚀 Quick Start",
-        value="1. Admin: `!auto enable`\n2. Users: `!mylang vi` (or any language)\n3. Send English message → Auto-translation!",
+        value="1. Admin: `!auto enable`\n2. Users: `!mylang` (select from dropdown)\n3. Send English messages → Auto-translation!",
         inline=False
     )
     
     embed.add_field(
         name="👤 User Commands",
-        value="• `!mylang [code]` - Set your language\n• `!translate [lang] [text]` - Manual translation\n• `!langs` - List all languages",
+        value="• `!mylang` - Set your language (dropdown menu)\n• `!translate [lang] [text]` - Manual translation\n• `!langs` - List all languages",
         inline=False
     )
     
@@ -758,69 +738,12 @@ async def help_command(ctx):
     )
     
     embed.add_field(
-        name="🎯 Flag Reactions",
-        value="React to any message with:\n🇪🇸 🇫🇷 🇩🇪 🇯🇵 🇰🇷 🇻🇳 🇨🇳\nTo get instant translations!",
+        name="🎯 Translation Features",
+        value="• Auto-translate English messages\n• Click dropdown on translations for more languages\n• Manual translation with `!translate`",
         inline=False
     )
-    
-    embed.set_footer(text="Made with ❤️ by Translation Bot")
     
     await ctx.send(embed=embed)
-
-@bot.command(name="test")
-async def test_command(ctx):
-    """Test the translation system"""
-    embed = discord.Embed(
-        title="🧪 Translation Test",
-        description="Testing the translation system...",
-        color=discord.Color.gold()
-    )
-    
-    test_msg = await ctx.send(embed=embed)
-    
-    # Enable channel if not already
-    if not translator.is_channel_enabled(ctx.channel.id):
-        translator.enable_channel(ctx.channel.id)
-    
-    # Set user language to Vietnamese for test
-    translator.set_user_language(ctx.author.id, 'vi')
-    
-    # Send a test English message
-    test_embed = discord.Embed(
-        title="Test Message",
-        description="Hello! This is a test message to check if translation works.",
-        color=discord.Color.blue()
-    )
-    test_embed.add_field(name="Expected", value="Should auto-translate to Vietnamese", inline=False)
-    
-    test_message = await ctx.send(embed=test_embed)
-    
-    # Wait a bit then show what should happen
-    await asyncio.sleep(2)
-    
-    result_embed = discord.Embed(
-        title="✅ Test Complete",
-        color=discord.Color.green()
-    )
-    result_embed.add_field(
-        name="What should happen:",
-        value="1. Your language is set to Vietnamese\n2. The test message should auto-translate\n3. You can react with flags to translate",
-        inline=False
-    )
-    result_embed.add_field(
-        name="Try it yourself:",
-        value="React to any message with:\n🇪🇸 🇫🇷 🇩🇪 🇯🇵\nFor instant translations!",
-        inline=False
-    )
-    
-    await ctx.send(embed=result_embed)
-    
-    # Add flag reactions to test message
-    for flag in ['🇪🇸', '🇫🇷', '🇩🇪', '🇯🇵']:
-        try:
-            await test_message.add_reaction(flag)
-        except:
-            pass
 
 # ========== RUN BOT ==========
 if __name__ == "__main__":
