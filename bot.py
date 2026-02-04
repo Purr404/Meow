@@ -207,7 +207,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 translator = SelectiveTranslator()
 
 # ========== SOLUTION 1: THREAD-BASED (Recommended) ==========
