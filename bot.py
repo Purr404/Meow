@@ -6,13 +6,11 @@ from dotenv import load_dotenv
 import asyncio
 import sqlite3
 from datetime import datetime
-import json
 import re
 
 load_dotenv()
 
 # ========== CONFIGURATION ==========
-AUTO_TRANSLATE_CHANNELS = []  # Add your channel IDs
 SOURCE_LANGUAGE = "en"  # Messages in this language get translated
 MAX_TEXT_LENGTH = 1000
 MIN_TEXT_LENGTH = 3
@@ -65,8 +63,6 @@ class SelectiveTranslator:
             CREATE TABLE IF NOT EXISTS user_preferences (
                 user_id INTEGER PRIMARY KEY,
                 language_code TEXT DEFAULT 'en',
-                show_original BOOLEAN DEFAULT 1,
-                method TEXT DEFAULT 'thread',
                 updated_at TIMESTAMP
             )
         ''')
@@ -74,8 +70,7 @@ class SelectiveTranslator:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS channel_settings (
                 channel_id INTEGER PRIMARY KEY,
-                enabled BOOLEAN DEFAULT 0,
-                method TEXT DEFAULT 'thread'
+                enabled BOOLEAN DEFAULT 0
             )
         ''')
         
@@ -122,7 +117,7 @@ class SelectiveTranslator:
     def detect_language(self, text):
         """Simple language detection"""
         if len(text) < MIN_TEXT_LENGTH:
-            return None
+            return 'en'  # Default to English for short messages
         
         # Check for non-English characters
         non_english_patterns = {
@@ -139,25 +134,15 @@ class SelectiveTranslator:
             if pattern.search(text):
                 return lang
         
-        # Check for common non-English words
-        common_non_english = {
-            'es': ['hola', 'gracias', 'por favor', 'cómo', 'qué'],
-            'fr': ['bonjour', 'merci', 's\'il vous plaît', 'comment', 'quoi'],
-            'de': ['hallo', 'danke', 'bitte', 'wie', 'was'],
-            'it': ['ciao', 'grazie', 'per favore', 'come', 'cosa'],
-            'pt': ['olá', 'obrigado', 'por favor', 'como', 'o que'],
-            'vi': ['xin chào', 'cảm ơn', 'làm ơn', 'như thế nào', 'cái gì'],
-            'ja': ['こんにちは', 'ありがとう', 'お願いします', 'どうやって', '何'],
-            'ko': ['안녕하세요', '감사합니다', '부탁합니다', '어떻게', '무엇'],
-        }
-        
+        # Simple English detection - check for common English words
+        english_words = ['the', 'and', 'you', 'that', 'have', 'for', 'with', 'this', 'are', 'but', 'not', 'what']
         text_lower = text.lower()
-        for lang, words in common_non_english.items():
-            if any(word in text_lower for word in words):
-                return lang
         
-        # Default to English if no other language detected
-        return 'en'
+        for word in english_words:
+            if f' {word} ' in f' {text_lower} ':
+                return 'en'
+        
+        return 'en'  # Default to English
     
     def get_user_language(self, user_id):
         """Get user's preferred language"""
@@ -186,10 +171,62 @@ class SelectiveTranslator:
         
         conn.commit()
         conn.close()
+        print(f"📝 Set language for user {user_id}: {language_code}")
+    
+    def enable_channel(self, channel_id):
+        """Enable auto-translate for a channel"""
+        conn = sqlite3.connect('selective_translations.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO channel_settings (channel_id, enabled)
+            VALUES (?, 1)
+        ''', (channel_id,))
+        
+        conn.commit()
+        conn.close()
+        print(f"✅ Enabled auto-translate for channel {channel_id}")
+    
+    def disable_channel(self, channel_id):
+        """Disable auto-translate for a channel"""
+        conn = sqlite3.connect('selective_translations.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO channel_settings (channel_id, enabled)
+            VALUES (?, 0)
+        ''', (channel_id,))
+        
+        conn.commit()
+        conn.close()
+        print(f"❌ Disabled auto-translate for channel {channel_id}")
     
     def is_channel_enabled(self, channel_id):
         """Check if auto-translate is enabled for channel"""
-        return channel_id in AUTO_TRANSLATE_CHANNELS
+        conn = sqlite3.connect('selective_translations.db')
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT enabled FROM channel_settings WHERE channel_id = ?",
+            (channel_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        
+        return bool(result[0]) if result else False
+    
+    def get_enabled_channels(self):
+        """Get all enabled channel IDs"""
+        conn = sqlite3.connect('selective_translations.db')
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT channel_id FROM channel_settings WHERE enabled = 1"
+        )
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [row[0] for row in results]
     
     def check_cooldown(self, user_id):
         """Check user cooldown"""
@@ -203,159 +240,22 @@ class SelectiveTranslator:
         return True
 
 # ========== BOT SETUP ==========
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
+intents = discord.Intents.all()  # CHANGED: Use ALL intents
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 translator = SelectiveTranslator()
-
-# ========== SOLUTION 1: THREAD-BASED (Recommended) ==========
-async def create_per_user_threads(message, user_languages):
-    """Create separate threads for each language group"""
-    original_author = message.author
-    original_content = message.content
-    
-    # Create a main thread for translations
-    thread_name = f"Translations for {original_author.display_name}"
-    
-    try:
-        # Create a public thread
-        thread = await message.create_thread(
-            name=thread_name,
-            auto_archive_duration=60
-        )
-        
-        # Send original message in thread
-        await thread.send(
-            f"**Original message by {original_author.mention}:**\n"
-            f"{original_content}\n\n"
-            f"**Translations below ↓**"
-        )
-        
-        # Create language-specific channels within thread
-        for user_id, lang_code in user_languages.items():
-            user = await bot.fetch_user(user_id)
-            lang_info = LANGUAGES.get(lang_code, {'name': lang_code.upper(), 'flag': '🌐'})
-            
-            # Translate for this user
-            translated = translator.translate_text(original_content, lang_code, SOURCE_LANGUAGE)
-            
-            if translated:
-                # Send user-specific message
-                await thread.send(
-                    f"{lang_info['flag']} **For {user.mention} ({lang_info['name']}):**\n"
-                    f"{translated}"
-                )
-        
-        # Add control message
-        await thread.send(
-            f"\n🔧 **Thread Controls:**\n"
-            f"• Set your language: `!mylang [code]`\n"
-            f"• Available languages: `!langs`\n"
-            f"• This thread auto-archives after 1 hour"
-        )
-        
-    except Exception as e:
-        print(f"❌ Error creating thread: {e}")
-
-# ========== SOLUTION 2: REACTION-BASED (Simple) ==========
-async def send_reaction_translations(message, user_languages):
-    """Send translations via reactions and hidden messages"""
-    original_author = message.author
-    
-    # Add translation reactions
-    available_languages = set(user_languages.values())
-    
-    for lang_code in available_languages:
-        flag = LANGUAGES.get(lang_code, {}).get('flag', '🌐')
-        try:
-            await message.add_reaction(flag)
-        except:
-            pass
-    
-    # Send instruction
-    instruction = await message.reply(
-        f"**🌐 This message has translations available!**\n"
-        f"React with your country's flag to see translation in your language.\n"
-        f"Set your language first with `!mylang [code]`",
-        mention_author=False
-    )
-    
-    # Store message info for later
-    await store_translation_info(message.id, user_languages)
-
-async def store_translation_info(message_id, user_languages):
-    """Store translation info for reaction handling"""
-    # In a real implementation, you'd store this in a database
-    # For simplicity, we'll just print it
-    print(f"📝 Stored translation info for message {message_id}: {user_languages}")
-
-# ========== SOLUTION 3: WEBHOOK-BASED (Most Advanced) ==========
-async def send_webhook_translations(message, user_languages):
-    """Use webhooks to send personalized messages"""
-    channel = message.channel
-    
-    # Group users by language
-    language_groups = {}
-    for user_id, lang_code in user_languages.items():
-        if lang_code not in language_groups:
-            language_groups[lang_code] = []
-        language_groups[lang_code].append(user_id)
-    
-    # Create webhook for each language group
-    for lang_code, user_ids in language_groups.items():
-        if lang_code == SOURCE_LANGUAGE:
-            continue  # Skip if same as source
-        
-        lang_info = LANGUAGES.get(lang_code, {'name': lang_code.upper(), 'flag': '🌐'})
-        
-        # Translate message
-        translated = translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
-        
-        if translated:
-            # Create or get webhook
-            webhooks = await channel.webhooks()
-            webhook = None
-            
-            for wh in webhooks:
-                if wh.name == f"Translator-{lang_code}":
-                    webhook = wh
-                    break
-            
-            if not webhook:
-                webhook = await channel.create_webhook(
-                    name=f"Translator-{lang_code}",
-                    reason="Auto-translation webhook"
-                )
-            
-            # Prepare mention string for users
-            mentions = []
-            for user_id in user_ids[:5]:  # Limit to 5 mentions
-                user = await bot.fetch_user(user_id)
-                mentions.append(user.mention)
-            
-            mention_text = " ".join(mentions) if mentions else ""
-            
-            # Send via webhook
-            await webhook.send(
-                content=f"{lang_info['flag']} **Translation ({lang_info['name']})**\n"
-                       f"{translated}\n\n"
-                       f"{mention_text}" if mention_text else "",
-                username=f"Translator ({lang_info['name']})",
-                avatar_url=bot.user.avatar.url if bot.user.avatar else None,
-                allowed_mentions=discord.AllowedMentions(users=True)
-            )
 
 # ========== EVENT HANDLERS ==========
 @bot.event
 async def on_ready():
     print(f'✅ {bot.user} is online!')
-    print(f'🌍 Selective translation bot ready')
+    
+    # Load enabled channels from database
+    enabled_channels = translator.get_enabled_channels()
+    print(f'🌍 Auto-translate ready for {len(enabled_channels)} channels')
     
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="messages & translating selectively"
+        name=f"translations in {len(enabled_channels)} channels"
     ))
 
 @bot.event
@@ -371,6 +271,8 @@ async def on_message(message):
     if not translator.is_channel_enabled(message.channel.id):
         return
     
+    print(f"📨 Message in enabled channel #{message.channel.name}")
+    
     # Check cooldown
     if not translator.check_cooldown(message.author.id):
         return
@@ -381,82 +283,107 @@ async def on_message(message):
     
     # Detect language of message
     detected_lang = translator.detect_language(message.content)
+    print(f"🔍 Detected language: {detected_lang}")
     
     # Only translate if message is in source language
     if detected_lang != SOURCE_LANGUAGE:
+        print(f"⚠️ Not translating - message is in {detected_lang}, not {SOURCE_LANGUAGE}")
         return
+    
+    print(f"✅ Message is in {SOURCE_LANGUAGE}, proceeding with translation...")
     
     # Get all members who can see this channel
-    members = []
-    if isinstance(message.channel, discord.TextChannel):
-        members = [member for member in message.channel.members if not member.bot]
-    else:
-        return
-    
-    # Collect users who need translation
-    user_languages = {}
-    for member in members:
-        if member.id == message.author.id:
-            continue  # Skip original author
+    try:
+        members = []
+        if isinstance(message.channel, discord.TextChannel):
+            members = [member for member in message.channel.members if not member.bot]
+        else:
+            return
         
-        user_lang = translator.get_user_language(member.id)
+        print(f"👥 Found {len(members)} members in channel")
         
-        # Only add if user's language is different from source
-        if user_lang != SOURCE_LANGUAGE:
-            user_languages[member.id] = user_lang
-    
-    if not user_languages:
-        return
-    
-    # ===== CHOOSE TRANSLATION METHOD =====
-    # Method 1: Thread-based (Recommended)
-    await create_per_user_threads(message, user_languages)
-    
-    # Method 2: Reaction-based (Simple)
-    # await send_reaction_translations(message, user_languages)
-    
-    # Method 3: Webhook-based (Advanced)
-    # await send_webhook_translations(message, user_languages)
+        # Collect users who need translation
+        user_languages = {}
+        for member in members:
+            if member.id == message.author.id:
+                continue  # Skip original author
+            
+            user_lang = translator.get_user_language(member.id)
+            print(f"   👤 {member.display_name}: {user_lang}")
+            
+            # Only add if user's language is different from source
+            if user_lang != SOURCE_LANGUAGE:
+                user_languages[member.id] = user_lang
+        
+        if not user_languages:
+            print("❌ No users need translation (all users have English set)")
+            return
+        
+        print(f"🎯 Translating for {len(user_languages)} users: {user_languages}")
+        
+        # Create thread for translations
+        await create_translation_thread(message, user_languages)
+        
+    except Exception as e:
+        print(f"❌ Error in on_message: {e}")
 
-# ========== REACTION HANDLER ==========
-@bot.event
-async def on_reaction_add(reaction, user):
-    """Handle translation reactions"""
-    if user.bot:
-        return
-    
-    # Check if this is a translation reaction
-    message = reaction.message
-    
-    # Look for flag emojis
-    flag_to_lang = {info['flag']: code for code, info in LANGUAGES.items()}
-    
-    if str(reaction.emoji) in flag_to_lang:
-        lang_code = flag_to_lang[str(reaction.emoji)]
+async def create_translation_thread(message, user_languages):
+    """Create a thread with translations for each user"""
+    try:
+        # Create a public thread
+        thread = await message.create_thread(
+            name=f"Translations for {message.author.display_name}",
+            auto_archive_duration=60,
+            reason="Auto-translation thread"
+        )
+        print(f"🧵 Created thread: {thread.name}")
         
-        # Check if user has this language set
-        user_lang = translator.get_user_language(user.id)
+        # Send original message in thread
+        await thread.send(
+            f"**Original message by {message.author.mention}:**\n"
+            f"{message.content}"
+        )
         
-        if user_lang == lang_code:
-            # User reacted with their language flag
-            # Here you would fetch and send the translation
-            # For now, send a DM with translation
-            try:
-                translated = translator.translate_text(
-                    message.content,
-                    lang_code,
-                    SOURCE_LANGUAGE
-                )
+        # Send translations for each user
+        translation_count = 0
+        for user_id, lang_code in user_languages.items():
+            if translation_count >= 5:  # Limit to 5 translations per thread
+                break
                 
-                if translated:
-                    lang_info = LANGUAGES.get(lang_code, {'name': lang_code.upper()})
-                    await user.send(
-                        f"**{lang_info['flag']} Translation ({lang_info['name']}):**\n"
-                        f"{translated}\n\n"
-                        f"*From: {message.author.display_name} in #{message.channel.name}*"
-                    )
-            except:
-                pass
+            user = await bot.fetch_user(user_id)
+            lang_info = LANGUAGES.get(lang_code, {'name': lang_code.upper(), 'flag': '🌐'})
+            
+            # Translate for this user
+            translated = translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
+            
+            if translated:
+                # Send user-specific message
+                await thread.send(
+                    f"{lang_info['flag']} **For {user.mention} ({lang_info['name']}):**\n"
+                    f"{translated}"
+                )
+                translation_count += 1
+                print(f"   ✅ Sent {lang_code} translation to {user.display_name}")
+        
+        if translation_count > 0:
+            await thread.send(
+                f"\n🔧 *Set your language with `!mylang [code]` | "
+                f"Thread auto-archives in 1 hour*"
+            )
+        else:
+            await thread.send("❌ No translations were generated. Translation service might be down.")
+            await thread.delete(delay=10)  # Delete empty thread
+            
+    except discord.Forbidden:
+        print("❌ Bot doesn't have permission to create threads!")
+        await message.channel.send(
+            "⚠️ **Missing Permissions!**\n"
+            "I need **'Manage Threads'** and **'Create Public Threads'** permissions "
+            "to create translation threads."
+        )
+    except Exception as e:
+        print(f"❌ Error creating thread: {e}")
+        await message.channel.send(f"❌ Error creating translation thread: {str(e)}")
 
 # ========== COMMANDS ==========
 @bot.command(name="mylang", aliases=['lang', 'language'])
@@ -497,7 +424,7 @@ async def set_language(ctx, lang_code: str = None):
         embed.add_field(
             name="How it works",
             value=f"• Messages in **{SOURCE_LANGUAGE.upper()}** will be translated for you\n"
-                  f"• You'll see translations in threads or via reactions\n"
+                  f"• Translations appear in threads\n"
                   f"• Only you see your language's translation",
             inline=False
         )
@@ -522,13 +449,20 @@ async def set_language(ctx, lang_code: str = None):
         color=discord.Color.green()
     )
     
-    embed.add_field(
-        name="What to expect",
-        value=f"• Messages in {SOURCE_LANGUAGE.upper()} will be translated to {lang_info['name']}\n"
-              f"• You'll see translations in separate threads\n"
-              f"• React with {lang_info['flag']} to see translations",
-        inline=False
-    )
+    # Check if current channel is enabled
+    if translator.is_channel_enabled(ctx.channel.id):
+        embed.add_field(
+            name="Auto-Translate Active",
+            value=f"✅ English messages in this channel will be translated to {lang_info['name']} for you!",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="Note",
+            value=f"ℹ️ This channel doesn't have auto-translate enabled.\n"
+                  f"Ask an admin to use `!auto enable`",
+            inline=False
+        )
     
     await ctx.send(embed=embed)
 
@@ -540,7 +474,9 @@ async def toggle_auto(ctx, action: str = None):
     
     if action is None:
         # Show status
-        if channel.id in AUTO_TRANSLATE_CHANNELS:
+        enabled = translator.is_channel_enabled(channel.id)
+        
+        if enabled:
             embed = discord.Embed(
                 title="✅ Auto-Translate Enabled",
                 description=f"Auto-translate is **enabled** in {channel.mention}",
@@ -564,7 +500,8 @@ async def toggle_auto(ctx, action: str = None):
             name="Commands",
             value="`!auto enable` - Enable here\n"
                   "`!auto disable` - Disable here\n"
-                  "`!auto status` - Show all enabled channels",
+                  "`!auto status` - Show all enabled channels\n"
+                  "`!auto test` - Test auto-translate",
             inline=False
         )
         
@@ -574,71 +511,102 @@ async def toggle_auto(ctx, action: str = None):
     action = action.lower()
     
     if action in ['enable', 'on', 'start']:
-        if channel.id not in AUTO_TRANSLATE_CHANNELS:
-            AUTO_TRANSLATE_CHANNELS.append(channel.id)
-            
-            embed = discord.Embed(
-                title="✅ Auto-Translate Enabled",
-                description=f"Auto-translate has been enabled in {channel.mention}",
-                color=discord.Color.green()
-            )
-            
-            embed.add_field(
-                name="For Users",
-                value="1. Set your language: `!mylang [code]`\n"
-                      "2. English messages will auto-translate\n"
-                      "3. Translations appear in threads\n"
-                      "4. Each user sees only their language",
-                inline=False
-            )
-        else:
-            embed = discord.Embed(
-                title="⚠️ Already Enabled",
-                description=f"Auto-translate is already enabled in {channel.mention}",
-                color=discord.Color.orange()
-            )
+        translator.enable_channel(channel.id)
+        
+        embed = discord.Embed(
+            title="✅ Auto-Translate Enabled",
+            description=f"Auto-translate has been enabled in {channel.mention}",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="For Users",
+            value="1. Set your language: `!mylang [code]`\n"
+                  "2. English messages will auto-translate\n"
+                  "3. Translations appear in threads\n"
+                  "4. Each user sees ONLY their language",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Required Bot Permissions",
+            value="• Manage Threads\n• Create Public Threads\n• Send Messages\n• Embed Links",
+            inline=False
+        )
         
         await ctx.send(embed=embed)
         
     elif action in ['disable', 'off', 'stop']:
-        if channel.id in AUTO_TRANSLATE_CHANNELS:
-            AUTO_TRANSLATE_CHANNELS.remove(channel.id)
-            
-            embed = discord.Embed(
-                title="❌ Auto-Translate Disabled",
-                description=f"Auto-translate has been disabled in {channel.mention}",
-                color=discord.Color.red()
-            )
-        else:
-            embed = discord.Embed(
-                title="⚠️ Already Disabled",
-                description=f"Auto-translate is already disabled in {channel.mention}",
-                color=discord.Color.orange()
-            )
+        translator.disable_channel(channel.id)
+        
+        embed = discord.Embed(
+            title="❌ Auto-Translate Disabled",
+            description=f"Auto-translate has been disabled in {channel.mention}",
+            color=discord.Color.red()
+        )
         
         await ctx.send(embed=embed)
         
     elif action == 'status':
-        if not AUTO_TRANSLATE_CHANNELS:
+        enabled_channels = translator.get_enabled_channels()
+        
+        if not enabled_channels:
             await ctx.send("❌ Auto-translate is not enabled in any channels.")
             return
         
         channels_list = []
-        for channel_id in AUTO_TRANSLATE_CHANNELS:
+        for channel_id in enabled_channels:
             ch = bot.get_channel(channel_id)
             if ch:
-                channels_list.append(f"• {ch.mention} ({ch.name})")
+                channels_list.append(f"• {ch.mention} (`#{ch.name}`)")
+            else:
+                channels_list.append(f"• Unknown channel (`{channel_id}`)")
         
         embed = discord.Embed(
             title="📋 Auto-Translate Channels",
-            description="\n".join(channels_list) if channels_list else "No channels",
+            description="\n".join(channels_list),
             color=discord.Color.blue()
         )
-        embed.set_footer(text=f"Total: {len(AUTO_TRANSLATE_CHANNELS)} channels")
+        embed.set_footer(text=f"Total: {len(enabled_channels)} channels")
+        await ctx.send(embed=embed)
+    
+    elif action == 'test':
+        """Test if auto-translate is working"""
+        enabled = translator.is_channel_enabled(channel.id)
+        user_lang = translator.get_user_language(ctx.author.id)
+        
+        embed = discord.Embed(
+            title="🧪 Auto-Translate Test",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(name="Channel Enabled", value="✅ YES" if enabled else "❌ NO", inline=True)
+        embed.add_field(name="Your Language", value=user_lang.upper(), inline=True)
+        embed.add_field(name="Source Language", value=SOURCE_LANGUAGE.upper(), inline=True)
+        
+        if enabled and user_lang != SOURCE_LANGUAGE:
+            embed.add_field(
+                name="Result", 
+                value="✅ **READY** - English messages will translate for you!", 
+                inline=False
+            )
+        elif not enabled:
+            embed.add_field(
+                name="Result", 
+                value="❌ Channel not enabled. Use `!auto enable`", 
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Result", 
+                value=f"⚠️ Set non-English language: `!mylang vi` (or ko, ja, etc.)", 
+                inline=False
+            )
+        
         await ctx.send(embed=embed)
     
     else:
-        await ctx.send("❌ Invalid action. Use: `enable`, `disable`, or `status`")
+        await ctx.send("❌ Invalid action. Use: `enable`, `disable`, `status`, or `test`")
 
 @bot.command(name="langs", aliases=['languages'])
 async def list_languages(ctx):
@@ -706,14 +674,15 @@ async def translate_command(ctx, target_lang: str = None, *, text: str = None):
 async def ping(ctx):
     """Check bot status"""
     latency = round(bot.latency * 1000)
+    enabled_channels = translator.get_enabled_channels()
     
     embed = discord.Embed(
         title="🏓 Bot Status",
         color=discord.Color.green()
     )
     embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
-    embed.add_field(name="Active Channels", value=str(len(AUTO_TRANSLATE_CHANNELS)), inline=True)
-    embed.add_field(name="Translation Method", value="Thread-based", inline=True)
+    embed.add_field(name="Active Channels", value=str(len(enabled_channels)), inline=True)
+    embed.add_field(name="Uptime", value="24/7 on Railway", inline=True)
     
     await ctx.send(embed=embed)
 
@@ -727,38 +696,30 @@ async def help_command(ctx):
     )
     
     embed.add_field(
-        name="👤 For Users",
+        name="👤 User Commands",
         value="`!mylang [code]` - Set your language\n"
               "`!mylang` - Show your current language\n"
               "`!translate [lang] [text]` - Manual translation\n"
-              "`!langs` - List all languages",
+              "`!langs` - List all languages\n"
+              "`!ping` - Check bot status",
         inline=False
     )
     
     embed.add_field(
-        name="🛠️ For Admins",
+        name="🛠️ Admin Commands",
         value="`!auto enable` - Enable in this channel\n"
               "`!auto disable` - Disable in this channel\n"
-              "`!auto status` - Show enabled channels",
+              "`!auto status` - Show enabled channels\n"
+              "`!auto test` - Test auto-translate",
         inline=False
     )
     
     embed.add_field(
         name="🚀 Quick Setup",
         value="1. Admin: `!auto enable` (in desired channel)\n"
-              "2. User1: `!mylang ko` (Korean user)\n"
-              "3. User2: `!mylang vi` (Vietnamese user)\n"
-              "4. Result: English messages create threads with Korean & Vietnamese translations",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎯 How it works",
-        value="• Messages in English trigger translation\n"
-              "• A thread is created for translations\n"
-              "• Korean users see Korean translation\n"
-              "• Vietnamese users see Vietnamese translation\n"
-              "• Each user sees ONLY their language",
+              "2. User: `!mylang ko` (Korean user)\n"
+              "3. User: `!mylang vi` (Vietnamese user)\n"
+              "4. Send English message → Thread with translations!",
         inline=False
     )
     
