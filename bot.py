@@ -730,116 +730,142 @@ async def help_command(ctx):
 
 # DEBUG ----------
 
-@bot.command(name="debugmsg")
-async def debug_message(ctx, *, text: str = None):
-    """Debug why auto-translate isn't working"""
-    if not text:
-        text = "Hello everyone!"
+@bot.command(name="emergency")
+async def emergency_debug(ctx):
+    """Emergency debug - see EVERYTHING"""
+    print(f"\n" + "="*60)
+    print(f"🚨 EMERGENCY DEBUG - {datetime.now()}")
+    print(f"="*60)
     
-    print(f"\n" + "="*50)
-    print(f"🔍 DEBUG MESSAGE TRIGGERED")
-    print(f"="*50)
+    # 1. Check your language in database
+    conn = sqlite3.connect('selective_translations.db')
+    cursor = conn.cursor()
     
-    # Check channel
-    channel_enabled = translator.is_channel_enabled(ctx.channel.id)
-    print(f"📌 Channel {ctx.channel.id} enabled: {channel_enabled}")
+    # Your language
+    cursor.execute("SELECT language_code FROM user_preferences WHERE user_id = ?", (ctx.author.id,))
+    db_lang = cursor.fetchone()
+    print(f"📊 DATABASE - Your language: {db_lang}")
     
-    # Check your language
-    your_lang = translator.get_user_language(ctx.author.id)
-    print(f"👤 Your language: {your_lang}")
+    # Channel status
+    cursor.execute("SELECT enabled FROM channel_settings WHERE channel_id = ?", (ctx.channel.id,))
+    channel_db = cursor.fetchone()
+    print(f"📊 DATABASE - Channel enabled: {channel_db}")
     
-    # Detect message language
-    detected = translator.detect_language(text)
-    print(f"🔍 Detected language: {detected}")
+    # All channels
+    cursor.execute("SELECT * FROM channel_settings")
+    all_channels = cursor.fetchall()
+    print(f"📊 DATABASE - All channels: {all_channels}")
     
-    # Check cooldown
-    cooldown_ok = translator.check_cooldown(ctx.author.id)
-    print(f"⏰ Cooldown check: {cooldown_ok}")
+    # All users
+    cursor.execute("SELECT * FROM user_preferences LIMIT 5")
+    all_users = cursor.fetchall()
+    print(f"📊 DATABASE - Some users: {all_users}")
     
-    # Simulate what on_message does
-    if not channel_enabled:
-        await ctx.send("❌ Channel not enabled! Use `!auto enable`")
-        return
+    conn.close()
     
-    if not cooldown_ok:
-        await ctx.send("⚠️ On cooldown")
-        return
+    # 2. Current state
+    print(f"📱 CURRENT STATE:")
+    print(f"   👤 Your ID: {ctx.author.id}")
+    print(f"   📍 Channel ID: {ctx.channel.id}")
+    print(f"   🏷️ Channel type: {type(ctx.channel)}")
     
-    if detected != SOURCE_LANGUAGE:
-        await ctx.send(f"⚠️ Message detected as `{detected}`, not `{SOURCE_LANGUAGE}`")
-        return
+    # 3. Manual checks
+    manual_channel_enabled = translator.is_channel_enabled(ctx.channel.id)
+    print(f"🔧 Manual check - Channel enabled: {manual_channel_enabled}")
     
-    # Check members
-    members = ctx.channel.members
-    print(f"👥 Members in channel: {len(members)}")
+    manual_your_lang = translator.get_user_language(ctx.author.id)
+    print(f"🔧 Manual check - Your language: {manual_your_lang}")
     
-    user_languages = {}
-    for member in members:
-        if member.bot or member.id == ctx.author.id:
-            continue
-        
-        member_lang = translator.get_user_language(member.id)
-        print(f"   👤 {member.display_name}: {member_lang}")
-        
-        if member_lang != SOURCE_LANGUAGE:
-            user_languages[member.id] = member_lang
+    # 4. Test message
+    test_msg = "Hello world"
+    detected = translator.detect_language(test_msg)
+    print(f"🧪 Test 'Hello world' detected as: {detected}")
     
-    print(f"🎯 Users needing translation: {len(user_languages)}")
-    print(f"🎯 User languages: {user_languages}")
-    
-    if not user_languages:
-        await ctx.send("❌ No users need translation (all have English set or no users in channel)")
-        return
-    
-    # Try to create thread
+    # 5. Members check
     try:
-        print("🔄 Attempting to create thread...")
-        thread = await ctx.message.create_thread(
-            name=f"DEBUG Translations for {ctx.author.display_name}",
-            auto_archive_duration=60
-        )
-        print(f"✅ Thread created: {thread.name}")
-        
-        # Test translation
-        test_lang = list(user_languages.values())[0]
-        print(f"🔄 Testing translation to {test_lang}...")
-        translated = translator.translate_text(text, test_lang)
-        print(f"✅ Translation result: {translated[:50]}...")
-        
-        if translated:
-            await thread.send(f"🇺🇸 **Original:** {text}")
-            await thread.send(f"🌐 **Test translation ({test_lang}):** {translated}")
-            await thread.send("✅ **DEBUG:** Auto-translate logic is working!")
-            await ctx.send(f"✅ Debug complete! Check thread: {thread.mention}")
-        else:
-            await thread.send("❌ Translation failed - API might be down")
-            await ctx.send("❌ Translation failed")
-            
+        members = ctx.channel.members
+        print(f"👥 Members in channel: {len(members)}")
+        for i, member in enumerate(members[:5]):  # First 5
+            if not member.bot:
+                member_lang = translator.get_user_language(member.id)
+                print(f"   {i+1}. {member.display_name} (ID: {member.id}): {member_lang}")
     except Exception as e:
-        print(f"❌ Thread creation error: {e}")
-        await ctx.send(f"❌ Thread creation failed: {str(e)}")
+        print(f"❌ Error checking members: {e}")
     
-    print("="*50 + "\n")
-
-@bot.command(name="fix")
-async def fix_all(ctx):
-    """Fix common issues"""
-    # Enable channel
-    translator.enable_channel(ctx.channel.id)
+    # 6. Try translation API
+    print(f"🌐 Testing translation API...")
+    try:
+        translated = translator.translate_text("Hello", "vi")
+        print(f"🌐 API test - 'Hello' → Vietnamese: {translated}")
+    except Exception as e:
+        print(f"❌ Translation API error: {e}")
     
-    # Set your language to Vietnamese
-    translator.set_user_language(ctx.author.id, "vi")
+    # 7. Send results to Discord
+    embed = discord.Embed(title="🚨 EMERGENCY DEBUG RESULTS", color=discord.Color.red())
     
-    embed = discord.Embed(
-        title="🔧 Auto-Fix Applied",
-        color=discord.Color.green()
+    embed.add_field(
+        name="Database - Your Language", 
+        value=f"`{db_lang}`" if db_lang else "❌ NOT FOUND (default: en)",
+        inline=True
     )
-    embed.add_field(name="Channel", value="✅ Enabled for auto-translate", inline=False)
-    embed.add_field(name="Your Language", value="✅ Set to Vietnamese (vi)", inline=False)
-    embed.add_field(name="Next Step", value="Send `!debugmsg Hello` to test", inline=False)
+    
+    embed.add_field(
+        name="Database - Channel", 
+        value=f"`{channel_db}`" if channel_db else "❌ NOT FOUND",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Manual Check - Your Lang", 
+        value=manual_your_lang,
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Manual Check - Channel", 
+        value="✅ ENABLED" if manual_channel_enabled else "❌ DISABLED",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Message Detection", 
+        value=f"`'{test_msg}'` → `{detected}`",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Translation API", 
+        value="✅ WORKING" if translated else "❌ BROKEN",
+        inline=True
+    )
+    
+    # Recommendations
+    recommendations = []
+    if not db_lang or db_lang[0] == 'en':
+        recommendations.append("❌ **Your language is English or not set** - Use `!mylang vi`")
+    if not channel_db or not channel_db[0]:
+        recommendations.append("❌ **Channel not enabled in DB** - Use `!auto enable`")
+    if not translated:
+        recommendations.append("❌ **Translation API down** - Try different endpoint")
+    
+    if recommendations:
+        embed.add_field(
+            name="🔧 RECOMMENDED FIXES", 
+            value="\n".join(recommendations),
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="✅ ALL CHECKS PASSED",
+            value="The bot should be working. Send an English message!",
+            inline=False
+        )
     
     await ctx.send(embed=embed)
-
+    
+    print(f"="*60)
+    print(f"📤 Debug results sent to Discord")
+    print(f"="*60 + "\n")
 #END DEBUG--------
 
 # ========== RUN BOT ==========
