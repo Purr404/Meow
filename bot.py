@@ -434,6 +434,10 @@ async def on_message(message):
     # Check if auto-translate is enabled for this channel
     if not translator.is_channel_enabled(message.channel.id):
         return
+
+    # Skip if it starts with command prefix (already processed)
+    if message.content.startswith('!', '!!'):
+        return
     
     # Skip short messages
     if len(message.content.strip()) < 2:
