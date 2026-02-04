@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # ========== CONFIGURATION ==========
 COOLDOWN_SECONDS = 5
+MAX_TRANSLATIONS_PER_MESSAGE = 5  # Limit translations to prevent spam
 
 # Language mapping with flags
 LANGUAGES = {
@@ -109,6 +110,7 @@ class SelectiveTranslator:
         self.google_translator = GoogleTranslator()
         self.user_cooldowns = {}
         self.translation_cache = {}
+        self.message_cooldowns = {}  # Track message translations
         self.db_path = 'translations.db'
         self._init_db()
         logger.info("✅ Translator initialized")
@@ -187,7 +189,11 @@ class SelectiveTranslator:
             # Use Google Translate to detect language
             detection = self.google_translator.detect(text)
             if detection and detection.lang:
-                return detection.lang
+                # Convert to short code if needed
+                lang_code = detection.lang
+                if '-' in lang_code:
+                    lang_code = lang_code.split('-')[0]
+                return lang_code
             return 'en'
         except Exception as e:
             logger.error(f"Language detection error: {e}")
@@ -289,64 +295,122 @@ class SelectiveTranslator:
         self.user_cooldowns[user_id] = now
         return True
 
+    def check_message_cooldown(self, message_id):
+        """Check if we already translated this message recently"""
+        now = datetime.now()
+        last_time = self.message_cooldowns.get(message_id)
+        
+        # Clear old entries
+        old_messages = []
+        for msg_id, timestamp in self.message_cooldowns.items():
+            if (now - timestamp).seconds > 300:  # 5 minutes
+                old_messages.append(msg_id)
+        
+        for msg_id in old_messages:
+            self.message_cooldowns.pop(msg_id, None)
+        
+        if last_time and (now - last_time).seconds < 10:  # 10 second cooldown per message
+            return False
+        
+        self.message_cooldowns[message_id] = now
+        return True
+
 # ========== BOT SETUP ==========
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 translator = SelectiveTranslator()
 
 # ========== HELPER FUNCTIONS ==========
-async def send_translation_embed(original_message, translated_text, source_lang, target_lang, target_user=None):
-    """Create and send translation embed"""
-    source_info = LANGUAGES.get(source_lang, {'name': source_lang.upper(), 'flag': '🌐'})
-    target_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'flag': '🌐'})
-    
-    embed = discord.Embed(color=discord.Color.blue())
-    
-    # Set author
-    embed.set_author(
-        name=f"Message by {original_message.author.display_name}",
-        icon_url=original_message.author.avatar.url if original_message.author.avatar else None
-    )
-    
-    # Original text with language flag
-    original_display = original_message.content
-    if len(original_display) > 800:
-        original_display = original_display[:797] + "..."
-    
-    embed.add_field(
-        name=f"{source_info['flag']} {source_info['name']}",
-        value=original_display,
-        inline=False
-    )
-    
-    # Translated text
-    translated_display = translated_text
-    if len(translated_display) > 800:
-        translated_display = translated_display[:797] + "..."
-    
-    embed.add_field(
-        name=f"{target_info['flag']} {target_info['name']}",
-        value=translated_display,
-        inline=False
-    )
-    
-    # Add translation note
-    if target_user:
-        embed.set_footer(text=f"Translated for {target_user.display_name}")
-    
-    if target_user:
-        # Send as reply with mention
-        return await original_message.reply(
-            f"**Translation for {target_user.mention}**",
-            embed=embed,
-            mention_author=False
-        )
-    else:
-        # Send as regular reply
-        return await original_message.reply(
-            embed=embed,
-            mention_author=False
-        )
+async def send_grouped_translations(message, language_groups):
+    """Send grouped translations by language"""
+    try:
+        # Detect source language
+        source_lang = translator.detect_language(message.content)
+        source_info = LANGUAGES.get(source_lang, {'name': source_lang.upper(), 'flag': '🌐'})
+        
+        # Sort languages by number of users (most users first)
+        sorted_languages = sorted(language_groups.items(), key=lambda x: len(x[1]), reverse=True)
+        
+        # Limit to prevent spam
+        sorted_languages = sorted_languages[:MAX_TRANSLATIONS_PER_MESSAGE]
+        
+        translations_sent = 0
+        
+        for target_lang, users in sorted_languages:
+            # Skip if no users
+            if not users:
+                continue
+                
+            # Translate once per language
+            translated = translator.translate_text(message.content, target_lang, source_lang)
+            if not translated:
+                continue
+            
+            target_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'flag': '🌐'})
+            
+            # Create mention string for users
+            mention_list = []
+            for user_id in users:
+                user = message.guild.get_member(user_id)
+                if user:
+                    mention_list.append(user.mention)
+            
+            if not mention_list:
+                continue
+            
+            # Create embed
+            embed = discord.Embed(color=discord.Color.blue())
+            
+            # Set author
+            embed.set_author(
+                name=f"Message by {message.author.display_name}",
+                icon_url=message.author.avatar.url if message.author.avatar else None
+            )
+            
+            # Original text
+            original_display = message.content
+            if len(original_display) > 500:
+                original_display = original_display[:497] + "..."
+            
+            embed.add_field(
+                name=f"{source_info['flag']} {source_info['name']}",
+                value=original_display,
+                inline=False
+            )
+            
+            # Translated text
+            translated_display = translated
+            if len(translated_display) > 500:
+                translated_display = translated_display[:497] + "..."
+            
+            embed.add_field(
+                name=f"{target_info['flag']} {target_info['name']}",
+                value=translated_display,
+                inline=False
+            )
+            
+            # Send the translation
+            if len(mention_list) > 1:
+                # Group mention
+                mentions_text = f"**For:** {', '.join(mention_list)}"
+            else:
+                # Single mention
+                mentions_text = f"**For:** {mention_list[0]}"
+            
+            await message.reply(
+                f"{mentions_text}\n",
+                embed=embed,
+                mention_author=False
+            )
+            
+            translations_sent += 1
+            await asyncio.sleep(0.5)  # Small delay between translations
+        
+        return translations_sent > 0
+        
+    except Exception as e:
+        logger.error(f"Error sending grouped translations: {e}")
+        return False
 
 # ========== EVENT HANDLERS ==========
 @bot.event
@@ -375,8 +439,8 @@ async def on_message(message):
     if len(message.content.strip()) < 2:
         return
     
-    # Check cooldown
-    if not translator.check_cooldown(message.author.id):
+    # Check message cooldown (prevent duplicate translations)
+    if not translator.check_message_cooldown(message.id):
         return
     
     logger.info(f"📨 Processing message from {message.author}")
@@ -392,39 +456,26 @@ async def on_message(message):
         else:
             return
         
-        # Process each user in the channel
-        translation_tasks = []
+        # Group users by their preferred language
+        language_groups = {}
+        
         for member in members:
             user_lang = translator.get_user_language(member.id)
             
             # Check if we should translate for this user
             if translator.should_translate_for_user(source_lang, user_lang, member.id, message.author.id):
-                logger.info(f"  👤 {member.display_name}: {source_lang} → {user_lang}")
-                
-                # Create translation task
-                task = asyncio.create_task(
-                    process_translation_for_user(message, source_lang, user_lang, member)
-                )
-                translation_tasks.append(task)
+                # Add user to language group
+                if user_lang not in language_groups:
+                    language_groups[user_lang] = []
+                language_groups[user_lang].append(member.id)
         
-        # Wait for all translations to complete
-        if translation_tasks:
-            await asyncio.gather(*translation_tasks, return_exceptions=True)
+        # If we have languages to translate to, send grouped translations
+        if language_groups:
+            logger.info(f"🎯 Translating to {len(language_groups)} language groups")
+            await send_grouped_translations(message, language_groups)
             
     except Exception as e:
         logger.error(f"Error in auto-translation: {e}")
-
-async def process_translation_for_user(message, source_lang, target_lang, user):
-    """Process translation for a specific user"""
-    try:
-        # Translate the message
-        translated = translator.translate_text(message.content, target_lang, source_lang)
-        if translated:
-            # Send the translation
-            await send_translation_embed(message, translated, source_lang, target_lang, user)
-            await asyncio.sleep(0.5)  # Small delay between translations
-    except Exception as e:
-        logger.error(f"Error translating for user {user}: {e}")
 
 # ========== COMMANDS ==========
 @bot.command(name="mylang")
@@ -485,12 +536,12 @@ async def toggle_auto(ctx, action: str = None):
         )
         embed.add_field(
             name="How it works:",
-            value="1. Users use `!mylang` to select their language\n2. Any message in any language will be auto-translated\n3. Each user gets translations in their preferred language",
+            value="1. Users use `!mylang` to select their language\n2. Any message will be auto-translated\n3. Translations are grouped by language (clean chat)",
             inline=False
         )
         embed.add_field(
             name="Example:",
-            value="• User A sets language to Hindi (`!mylang` → Hindi)\n• User B sets language to Spanish (`!mylang` → Spanish)\n• User C sends message in English\n→ User A sees Hindi translation\n→ User B sees Spanish translation",
+            value="• User A & B set language to Vietnamese\n• User C sends message in English\n→ Both User A & B get ONE Vietnamese translation (not separate)",
             inline=False
         )
         
@@ -649,8 +700,8 @@ async def help_command(ctx):
     )
     
     embed.add_field(
-        name="🎯 How Auto-Translate Works",
-        value="• Messages in ANY language are detected\n• Each user gets translation in their preferred language\n• No dropdowns on translations - clean UI",
+        name="🎯 Clean Chat Feature",
+        value="• Messages are grouped by language\n• Multiple users with same language get ONE translation\n• Prevents chat spam with duplicate translations",
         inline=False
     )
     
