@@ -51,6 +51,36 @@ class SelectiveTranslator:
         self.user_cooldowns = {}
         self.setup_database()
         print("✅ Translator initialized with Google Translate")
+
+# DATABASE-----
+def setup_database(self):
+        """Setup SQLite database for user preferences"""
+        conn = sqlite3.connect('selective_translations.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                user_id INTEGER PRIMARY KEY,
+                language_code TEXT DEFAULT 'en',
+                show_original BOOLEAN DEFAULT 1,
+                method TEXT DEFAULT 'thread',
+                updated_at TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS channel_settings (
+                channel_id INTEGER PRIMARY KEY,
+                enabled BOOLEAN DEFAULT 0,
+                method TEXT DEFAULT 'thread'
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        print("✅ Database initialized")
+
+# END DB------
     
     def translate_text(self, text, target_lang, source_lang="auto"):
         """Translate using Google Translate (more reliable)"""
