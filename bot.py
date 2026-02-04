@@ -330,21 +330,19 @@ async def on_message(message):
         print(f"👥 Found {len(members)} non-bot members in channel")
         
         # Collect users who need translation
-        user_languages = {}
-        for member in members:
-            if member.id == message.author.id:
-                print(f"   ⏩ Skipping author: {member.display_name}")
-                continue  # Skip original author
-            
-            user_lang = translator.get_user_language(member.id)
-            print(f"   👤 {member.display_name}: language = {user_lang}")
-            
-            # Only add if user's language is different from source
-            if user_lang != SOURCE_LANGUAGE:
-                user_languages[member.id] = user_lang
-                print(f"   ✅ Added to translation list")
-            else:
-                print(f"   ⏩ Skipping - language is English")
+user_languages = {}
+for member in members:
+    user_lang = translator.get_user_language(member.id)
+    print(f"   👤 {member.display_name}: language = {user_lang}")
+    
+    # Only add if user's language is different from source
+    if user_lang != SOURCE_LANGUAGE:
+        # If it's the author, we still translate for them
+        # but we won't mention them in the thread
+        user_languages[member.id] = user_lang
+        print(f"   ✅ Added to translation list")
+    else:
+        print(f"   ⏩ Skipping - language is English")
         
         print(f"🎯 Total users needing translation: {len(user_languages)}")
         print(f"🎯 User languages dict: {user_languages}")
