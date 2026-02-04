@@ -7,6 +7,7 @@ import asyncio
 import sqlite3
 from datetime import datetime
 from datetime import datetime, timedelta
+from googletrans import Translator as GoogleTranslator
 import re
 
 load_dotenv()
@@ -46,52 +47,34 @@ LANGUAGES = {
 # ========== TRANSLATOR ==========
 class SelectiveTranslator:
     def __init__(self):
-        self.endpoints = [
-            "https://translate.terraprint.co",
-            "https://libretranslate.de",
-            "https://translate.argosopentech.com"
-        ]
-        self.current_endpoint = 0
+        self.google_translator = GoogleTranslator()
         self.user_cooldowns = {}
         self.setup_database()
-    
-    def setup_database(self):
-        """Setup SQLite database for user preferences"""
-        conn = sqlite3.connect('selective_translations.db')
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_preferences (
-                user_id INTEGER PRIMARY KEY,
-                language_code TEXT DEFAULT 'en',
-                updated_at TIMESTAMP
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS channel_settings (
-                channel_id INTEGER PRIMARY KEY,
-                enabled BOOLEAN DEFAULT 0
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        print("✅ Database initialized")
-    
-    def get_endpoint(self):
-        return self.endpoints[self.current_endpoint]
-    
-    def rotate_endpoint(self):
-        self.current_endpoint = (self.current_endpoint + 1) % len(self.endpoints)
+        print("✅ Translator initialized with Google Translate")
     
     def translate_text(self, text, target_lang, source_lang="auto"):
-        """Translate text using free API"""
-        if len(text) > MAX_TEXT_LENGTH:
-            text = text[:MAX_TEXT_LENGTH]
+        """Translate using Google Translate (more reliable)"""
+        try:
+            print(f"🌐 Translating: '{text[:50]}...' → {target_lang}")
+            result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
+            print(f"🌐 Translation success: '{result.text[:50]}...'")
+            return result.text
+        except Exception as e:
+            print(f"❌ Google Translate error: {e}")
+            
+            # Fallback to LibreTranslate
+            return self._fallback_translate(text, target_lang, source_lang)
+    
+    def _fallback_translate(self, text, target_lang, source_lang="auto"):
+        """Fallback to LibreTranslate if Google fails"""
+        endpoints = [
+            "https://libretranslate.com",  # Primary
+            "https://translate.argosopentech.com",  # Backup 1
+            "https://translate.terraprint.co",  # Backup 2
+            "https://libretranslate.de",  # Backup 3
+        ]
         
-        for _ in range(len(self.endpoints)):
-            endpoint = self.get_endpoint()
+        for endpoint in endpoints:
             try:
                 response = requests.post(
                     f"{endpoint}/translate",
@@ -101,16 +84,11 @@ class SelectiveTranslator:
                         "target": target_lang,
                         "format": "text"
                     },
-                    timeout=10
+                    timeout=5
                 )
-                
                 if response.status_code == 200:
                     return response.json().get('translatedText')
-                elif response.status_code == 429:
-                    self.rotate_endpoint()
-                    continue
             except:
-                self.rotate_endpoint()
                 continue
         
         return None
