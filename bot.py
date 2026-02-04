@@ -436,7 +436,7 @@ async def on_message(message):
         return
 
     # Skip if it starts with command prefix (already processed)
-    if message.content.startswith('!', '!!'):
+    if message.content.startswith('!'):
         return
     
     # Skip short messages
