@@ -387,33 +387,41 @@ async def create_translation_thread(message, user_languages):
         print(f"   ✅ Sent original message to thread")
         
         # Send translations for each user
-        translation_count = 0
-        for user_id, lang_code in user_languages.items():
-            if translation_count >= 5:  # Limit to 5 translations per thread
-                print(f"   ⚠️ Reached translation limit (5)")
-                break
-                
-            print(f"   🔄 Processing user {user_id} -> {lang_code}")
-            
-            user = await bot.fetch_user(user_id)
-            lang_info = LANGUAGES.get(lang_code, {'name': lang_code.upper(), 'flag': '🌐'})
-            print(f"   👤 User fetched: {user}")
-            
-            # Translate for this user
-            print(f"   🌐 Translating to {lang_code}...")
-            translated = translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
-            print(f"   🌐 Translation result: {'SUCCESS' if translated else 'FAILED'}")
-            
-            if translated:
-                # Send user-specific message
-                await thread.send(
-                    f"{lang_info['flag']} **For {user.mention} ({lang_info['name']}):**\n"
-                    f"{translated}"
-                )
-                translation_count += 1
-                print(f"   ✅ Sent {lang_code} translation to {user.display_name}")
-            else:
-                print(f"   ❌ Translation failed for {lang_code}")
+translation_count = 0
+for user_id, lang_code in user_languages.items():
+    if translation_count >= 5:  # Limit to 5 translations per thread
+        print(f"   ⚠️ Reached translation limit (5)")
+        break
+        
+    print(f"   🔄 Processing user {user_id} -> {lang_code}")
+    
+    user = await bot.fetch_user(user_id)
+    lang_info = LANGUAGES.get(lang_code, {'name': lang_code.upper(), 'flag': '🌐'})
+    print(f"   👤 User fetched: {user}")
+    
+    # Translate for this user
+    print(f"   🌐 Translating to {lang_code}...")
+    translated = translator.translate_text(message.content, lang_code, SOURCE_LANGUAGE)
+    print(f"   🌐 Translation result: {'SUCCESS' if translated else 'FAILED'}")
+    
+    if translated:
+        # Check if this is the message author
+        if user_id == message.author.id:
+            # For author, don't mention them
+            await thread.send(
+                f"{lang_info['flag']} **{lang_info['name']} Translation:**\n"
+                f"{translated}"
+            )
+        else:
+            # For other users, mention them
+            await thread.send(
+                f"{lang_info['flag']} **For {user.mention} ({lang_info['name']}):**\n"
+                f"{translated}"
+            )
+        translation_count += 1
+        print(f"   ✅ Sent {lang_code} translation")
+    else:
+        print(f"   ❌ Translation failed for {lang_code}")
         
         if translation_count > 0:
             await thread.send(
