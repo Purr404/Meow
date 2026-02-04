@@ -540,14 +540,10 @@ async def toggle_auto(ctx, action: str = None):
         )
         embed.add_field(
             name="How it works:",
-            value="1. Users use `!mylang` to select their language\n2. Any message will be auto-translated\n3. Translations are grouped by language (clean chat)",
+            value="1. Use `!mylang` to select language\n2. Any message will be auto-translated\n",
             inline=False
         )
-        embed.add_field(
-            name="Example:",
-            value="• User A & B set language to Vietnamese\n• User C sends message in English\n→ Both User A & B get ONE Vietnamese translation (not separate)",
-            inline=False
-        )
+        
         
         await ctx.send(embed=embed)
 
@@ -680,35 +676,17 @@ async def ping(ctx):
 async def help_command(ctx):
     """Show help menu"""
     embed = discord.Embed(
-        title="🤖 Translation Bot Help",
+        title="Translation Bot Help",
         description="**Auto-translates any message to each user's preferred language**",
         color=discord.Color.blue()
     )
-    
-    embed.add_field(
-        name="🚀 Quick Start",
-        value="1. Admin: `!auto enable`\n2. Users: `!mylang` (select from dropdown)\n3. Any message → Auto-translated for each user!",
-        inline=False
-    )
-    
+   
     embed.add_field(
         name="👤 User Commands",
         value="• `!mylang` - Set your language (dropdown menu)\n• `!translate [lang] [text]` - Manual translation\n• `!langs` - List all languages",
         inline=False
     )
-    
-    embed.add_field(
-        name="🛠️ Admin Commands",
-        value="• `!auto enable` - Enable auto-translate\n• `!auto disable` - Disable auto-translate",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎯 Clean Chat Feature",
-        value="• Messages are grouped by language\n• Multiple users with same language get ONE translation\n• Prevents chat spam with duplicate translations",
-        inline=False
-    )
-    
+       
     await ctx.send(embed=embed)
 
 # ========== RUN BOT ==========
