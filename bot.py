@@ -10,6 +10,9 @@ from googletrans import Translator as GoogleTranslator
 import logging
 from contextlib import closing
 import hashlib
+import psycopg2
+from psycopg2.extras import DictCursor
+from urllib.parse import urlparse
 
 load_dotenv()
 
