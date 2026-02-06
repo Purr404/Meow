@@ -693,10 +693,14 @@ async def set_language(ctx, language_code: str = None):
     if not language_code:
         # Check if user already has a language role
         user_lang_from_role = None
+        role_used = None
+        
         for role in ctx.author.roles:
+            role_name = role.name
             for lang_code, lang_info in LANGUAGES.items():
-                if role.name == lang_info['role_name']:
+                if role_name == lang_info['role_name']:
                     user_lang_from_role = lang_code
+                    role_used = role
                     break
             if user_lang_from_role:
                 break
@@ -707,13 +711,18 @@ async def set_language(ctx, language_code: str = None):
             lang_info = LANGUAGES[user_lang_from_role]
             
             embed = discord.Embed(
-                title="✅ Language Synced from Role",
-                description=f"Your language has been automatically set to:\n{lang_info['flag']} **{lang_info['name']}** ({user_lang_from_role})",
+                title="✅ Language Detected from Role",
+                description=f"I found your **{role_used.name}** role and set your language automatically!",
                 color=discord.Color.green()
             )
             embed.add_field(
-                name="How it works:",
-                value="• Your language preference is now synced with your role\n• Use `!mylang [code]` to override if needed\n• Use `!mylang` without code to see the menu",
+                name="Language Set",
+                value=f"{lang_info['flag']} **{lang_info['name']}** ({user_lang_from_role})",
+                inline=False
+            )
+            embed.add_field(
+                name="Want a different language?",
+                value="Use `!mylang [code]` to set a different language\nExample: `!mylang de` for German",
                 inline=False
             )
             
@@ -733,6 +742,12 @@ async def set_language(ctx, language_code: str = None):
             embed.add_field(
                 name="Current Language",
                 value=f"{current_info['flag']} **{current_info['name']}**",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="No Language Set",
+                value="Select a language below to get started!",
                 inline=False
             )
         
@@ -756,36 +771,41 @@ async def set_language(ctx, language_code: str = None):
     translator.set_user_language(ctx.author.id, language_code)
     lang_info = LANGUAGES[language_code]
     
-    # Check if user wants to get the corresponding role
-    embed = discord.Embed(
-        title="✅ Language Set",
-        description=f"Your language has been set to:\n{lang_info['flag']} **{lang_info['name']}** ({language_code})",
-        color=discord.Color.green()
-    )
-    
-    # Check if role exists in the guild
+    # Check if the role exists in the guild
     role = discord.utils.get(ctx.guild.roles, name=lang_info['role_name'])
+    
     if role:
         # Check if bot has permission to manage roles
         if ctx.guild.me.guild_permissions.manage_roles:
             # Check if user already has the role
             if role in ctx.author.roles:
+                embed = discord.Embed(
+                    title="✅ Language Set",
+                    description=f"Your language has been set to:\n{lang_info['flag']} **{lang_info['name']}** ({language_code})",
+                    color=discord.Color.green()
+                )
                 embed.add_field(
                     name="Role Status",
                     value=f"You already have the **{role.name}** role",
                     inline=False
                 )
+                await ctx.send(embed=embed)
             else:
-                # Ask if user wants the role
+                # Offer to add the role
+                embed = discord.Embed(
+                    title="✅ Language Set",
+                    description=f"Your language has been set to:\n{lang_info['flag']} **{lang_info['name']}** ({language_code})",
+                    color=discord.Color.green()
+                )
                 embed.add_field(
-                    name="Want the language role?",
+                    name="Want the role too?",
                     value=f"React with ✅ to get the **{role.name}** role\nThis helps others know what languages you speak!",
                     inline=False
                 )
                 msg = await ctx.send(embed=embed)
                 await msg.add_reaction("✅")
                 
-                # Wait for reaction
+                # Wait for reaction with proper try/except
                 def check(reaction, user):
                     return user == ctx.author and str(reaction.emoji) == "✅" and reaction.message.id == msg.id
                 
@@ -803,11 +823,37 @@ async def set_language(ctx, language_code: str = None):
                     await ctx.send(embed=success_embed)
                     
                 except asyncio.TimeoutError:
+                    # User didn't react in time
                     pass
-                
-                return
-    
-    await ctx.send(embed=embed)
+                except Exception as e:
+                    # Catch any other errors
+                    logger.error(f"Error adding role: {e}")
+        else:
+            # Bot doesn't have permission to manage roles
+            embed = discord.Embed(
+                title="✅ Language Set",
+                description=f"Your language has been set to:\n{lang_info['flag']} **{lang_info['name']}** ({language_code})",
+                color=discord.Color.green()
+            )
+            embed.add_field(
+                name="Note",
+                value=f"Ask an admin to give you the **{role.name}** role if you want it.",
+                inline=False
+            )
+            await ctx.send(embed=embed)
+    else:
+        # Role doesn't exist in this server
+        embed = discord.Embed(
+            title="✅ Language Set",
+            description=f"Your language has been set to:\n{lang_info['flag']} **{lang_info['name']}** ({language_code})",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="Role Not Available",
+            value=f"The **{lang_info['role_name']}** role doesn't exist in this server yet.\nAsk an admin to create it with `!createlangroles`.",
+            inline=False
+        )
+        await ctx.send(embed=embed)
 
 @bot.command(name="langs")
 async def list_languages(ctx):
