@@ -574,7 +574,7 @@ async def on_ready():
     
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="!help | Auto-translate"
+        name="Meow~"
     ))
 
 @bot.event
@@ -859,13 +859,13 @@ async def translate_command(ctx, target_lang: str = None, *, text: str = None):
             )
             await ctx.send(embed=embed)
 
-@bot.command(name="ping")
+@bot.command(name="swswswsw")
 async def ping(ctx):
     """Check bot latency"""
     latency = round(bot.latency * 1000)
     
     embed = discord.Embed(
-        title="🏓 Pong!",
+        title="Meoww~",
         color=discord.Color.green()
     )
     embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
