@@ -987,6 +987,47 @@ async def create_language_roles(ctx):
     
     await msg.edit(embed=final_embed)
 
+
+@bot.command(name="synclang")
+async def sync_language(ctx):
+    """Sync your language preference with your current roles"""
+    user_lang_from_role = None
+    
+    # Find language role
+    for role in ctx.author.roles:
+        for lang_code, lang_info in LANGUAGES.items():
+            if role.name == lang_info['role_name']:
+                user_lang_from_role = lang_code
+                break
+        if user_lang_from_role:
+            break
+    
+    if not user_lang_from_role:
+        embed = discord.Embed(
+            title="❌ No Language Role Found",
+            description="You don't have any language roles yet.\n\nGet a role first, or use `!mylang` to set your language manually.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Set the language
+    translator.set_user_language(ctx.author.id, user_lang_from_role)
+    lang_info = LANGUAGES[user_lang_from_role]
+    
+    embed = discord.Embed(
+        title="✅ Language Synced!",
+        description=f"Your language preference is now synced with your **{lang_info['role_name']}** role.",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="Language Set",
+        value=f"{lang_info['flag']} **{lang_info['name']}**",
+        inline=False
+    )
+    
+    await ctx.send(embed=embed)
+
 @bot.command(name="ping")
 async def ping(ctx):
     """Check bot latency"""
