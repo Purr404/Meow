@@ -148,12 +148,12 @@ class SelectiveTranslator:
     def _init_db(self):
         """Initialize database tables"""
         try:
-        conn = self.get_connection()
+            conn = self.get_connection()
         
         # Check if it's PostgreSQL or SQLite
         is_postgres = hasattr(conn, 'cursor') and not hasattr(conn, '__enter__')
         
-           if is_postgres:
+        if is_postgres:
             # PostgreSQL connection
             cursor = conn.cursor()
             
