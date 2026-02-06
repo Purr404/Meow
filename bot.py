@@ -53,6 +53,75 @@ LANGUAGES = {
     'no': {'name': 'Norwegian', 'flag': '🇳🇴'},
 }
 
+# Language mapping with flags AND roles
+
+LANGUAGES = {
+    # 🌍 Global / English variants
+    'en': {'name': 'English', 'flag': '🇺🇸', 'role_name': 'English Speaker'},
+    'en-gb': {'name': 'English (UK)', 'flag': '🇬🇧', 'role_name': 'English Speaker'},
+
+    # 🇪🇸 Romance & European
+    'es': {'name': 'Spanish', 'flag': '🇪🇸', 'role_name': 'Spanish Speaker'},
+    'es-mx': {'name': 'Spanish (Mexico)', 'flag': '🇲🇽', 'role_name': 'Spanish Speaker'},
+    'fr': {'name': 'French', 'flag': '🇫🇷', 'role_name': 'French Speaker'},
+    'it': {'name': 'Italian', 'flag': '🇮🇹', 'role_name': 'Italian Speaker'},
+    'pt': {'name': 'Portuguese', 'flag': '🇵🇹', 'role_name': 'Portuguese Speaker'},
+    'pt-br': {'name': 'Portuguese (Brazil)', 'flag': '🇧🇷', 'role_name': 'Portuguese Speaker'},
+    'ro': {'name': 'Romanian', 'flag': '🇷🇴', 'role_name': 'Romanian Speaker'},
+
+    # 🇩🇪 Germanic & Nordic
+    'de': {'name': 'German', 'flag': '🇩🇪', 'role_name': 'German Speaker'},
+    'nl': {'name': 'Dutch', 'flag': '🇳🇱', 'role_name': 'Dutch Speaker'},
+    'sv': {'name': 'Swedish', 'flag': '🇸🇪', 'role_name': 'Swedish Speaker'},
+    'da': {'name': 'Danish', 'flag': '🇩🇰', 'role_name': 'Danish Speaker'},
+    'fi': {'name': 'Finnish', 'flag': '🇫🇮', 'role_name': 'Finnish Speaker'},
+    'no': {'name': 'Norwegian', 'flag': '🇳🇴', 'role_name': 'Norwegian Speaker'},
+    'is': {'name': 'Icelandic', 'flag': '🇮🇸', 'role_name': 'Icelandic Speaker'},
+
+    # 🇷🇺 Slavic / Eastern Europe
+    'ru': {'name': 'Russian', 'flag': '🇷🇺', 'role_name': 'Russian Speaker'},
+    'uk': {'name': 'Ukrainian', 'flag': '🇺🇦', 'role_name': 'Ukrainian Speaker'},
+    'pl': {'name': 'Polish', 'flag': '🇵🇱', 'role_name': 'Polish Speaker'},
+    'cs': {'name': 'Czech', 'flag': '🇨🇿', 'role_name': 'Czech Speaker'},
+    'sk': {'name': 'Slovak', 'flag': '🇸🇰', 'role_name': 'Slovak Speaker'},
+    'bg': {'name': 'Bulgarian', 'flag': '🇧🇬', 'role_name': 'Bulgarian Speaker'},
+    'sr': {'name': 'Serbian', 'flag': '🇷🇸', 'role_name': 'Serbian Speaker'},
+    'hr': {'name': 'Croatian', 'flag': '🇭🇷', 'role_name': 'Croatian Speaker'},
+
+    # 🌏 EAST ASIA
+    'ja': {'name': 'Japanese', 'flag': '🇯🇵', 'role_name': 'Japanese Speaker'},
+    'ko': {'name': 'Korean', 'flag': '🇰🇷', 'role_name': 'Korean Speaker'},
+    'zh': {'name': 'Chinese', 'flag': '🇨🇳', 'role_name': 'Chinese Speaker'},
+    'zh-tw': {'name': 'Chinese (Traditional)', 'flag': '🇹🇼', 'role_name': 'Chinese Speaker'},
+    'mn': {'name': 'Mongolian', 'flag': '🇲🇳', 'role_name': 'Mongolian Speaker'},
+
+    # 🌴 SOUTHEAST ASIA (SEA)
+    'vi': {'name': 'Vietnamese', 'flag': '🇻🇳', 'role_name': 'Vietnamese Speaker'},
+    'th': {'name': 'Thai', 'flag': '🇹🇭', 'role_name': 'Thai Speaker'},
+    'id': {'name': 'Indonesian', 'flag': '🇮🇩', 'role_name': 'Indonesian Speaker'},
+    'ms': {'name': 'Malay', 'flag': '🇲🇾', 'role_name': 'Malay Speaker'},
+    'tl': {'name': 'Filipino / Tagalog', 'flag': '🇵🇭', 'role_name': 'Filipino Speaker'},
+    'km': {'name': 'Khmer', 'flag': '🇰🇭', 'role_name': 'Khmer Speaker'},
+    'lo': {'name': 'Lao', 'flag': '🇱🇦', 'role_name': 'Lao Speaker'},
+    'my': {'name': 'Burmese', 'flag': '🇲🇲', 'role_name': 'Burmese Speaker'},
+
+    # 🌏 SOUTH ASIA
+    'hi': {'name': 'Hindi', 'flag': '🇮🇳', 'role_name': 'Hindi Speaker'},
+    'ur': {'name': 'Urdu', 'flag': '🇵🇰', 'role_name': 'Urdu Speaker'},
+    'bn': {'name': 'Bengali', 'flag': '🇧🇩', 'role_name': 'Bengali Speaker'},
+    'ta': {'name': 'Tamil', 'flag': '🇮🇳', 'role_name': 'Tamil Speaker'},
+    'si': {'name': 'Sinhala', 'flag': '🇱🇰', 'role_name': 'Sinhala Speaker'},
+
+    # 🕌 Middle East
+    'ar': {'name': 'Arabic', 'flag': '🇸🇦', 'role_name': 'Arabic Speaker'},
+    'fa': {'name': 'Persian (Farsi)', 'flag': '🇮🇷', 'role_name': 'Persian Speaker'},
+    'he': {'name': 'Hebrew', 'flag': '🇮🇱', 'role_name': 'Hebrew Speaker'},
+    'tr': {'name': 'Turkish', 'flag': '🇹🇷', 'role_name': 'Turkish Speaker'},
+
+    # 🌎 Americas
+    'fr-ca': {'name': 'French (Canada)', 'flag': '🇨🇦', 'role_name': 'French Speaker'},
+}
+
 # ========== UI COMPONENTS ==========
 class LanguageSelectView(ui.View):
     def __init__(self, user_id, translator):
