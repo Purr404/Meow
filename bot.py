@@ -479,15 +479,8 @@ async def send_grouped_translations(message, language_groups):
             
             target_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'flag': '🌐'})
             
-            # Create mention string for users
-            mention_list = []
-            for user_id in users:
-                user = message.guild.get_member(user_id)
-                if user:
-                    mention_list.append(user.mention)
-            
-            if not mention_list:
-                continue
+            # Count users
+            user_count = len(users)
             
             # Create embed
             embed = discord.Embed(color=discord.Color.blue())
@@ -520,16 +513,16 @@ async def send_grouped_translations(message, language_groups):
                 inline=False
             )
             
-            # Send the translation
-            if len(mention_list) > 1:
-                # Group mention
-                mentions_text = f"**For:** {', '.join(mention_list)}"
+            # Add user count to footer (clean, no names)
+            if user_count > 1:
+                footer_text = f"For {user_count} users"
             else:
-                # Single mention
-                mentions_text = f"**For:** {mention_list[0]}"
+                footer_text = "For 1 user"
             
+            embed.set_footer(text=footer_text)
+            
+            # Send the translation WITHOUT any mentions in message content
             await message.reply(
-                f"{mentions_text}\n",
                 embed=embed,
                 mention_author=False
             )
