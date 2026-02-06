@@ -475,7 +475,7 @@ async def send_grouped_translations(message, language_groups):
         # Create ONE embed
         embed = discord.Embed(
             color=discord.Color.blue(),
-            timestamp=datetime.now()
+
         )
         
         # Set author
