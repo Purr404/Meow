@@ -336,18 +336,31 @@ class SelectiveTranslator:
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return None
-
-    def get_user_language(self, user_id):
-        """Get user's preferred language"""
+    
+    def get_user_language(self, user_id, guild=None):
+        """Get user's preferred language, checking roles first"""
+        # If guild is provided, check for language roles first
+        if guild:
+            member = guild.get_member(user_id)
+            if member:
+                # Check if user has any language role
+                for role in member.roles:
+                    for lang_code, lang_info in LANGUAGES.items():
+                        if role.name == lang_info['role_name']:
+                            # Update database with this preference
+                            self.set_user_language(user_id, lang_code)
+                            return lang_code
+        
+        # Fall back to database preference
         result = self._execute_query(
             "SELECT language_code FROM user_preferences WHERE user_id = %s",
             (user_id,),
             fetchone=True
         )
         return result[0] if result else 'en'
-
+    
     def set_user_language(self, user_id, language_code):
-        """Save user's language preference"""
+        """Save user's language preference and optionally assign role"""
         self._execute_query(
             '''INSERT INTO user_preferences (user_id, language_code)
                VALUES (%s, %s)
@@ -356,7 +369,6 @@ class SelectiveTranslator:
                    updated_at = CURRENT_TIMESTAMP''',
             (user_id, language_code)
         )
-
     def enable_channel(self, channel_id):
         """Enable auto-translate for a channel"""
         self._execute_query(
