@@ -145,33 +145,26 @@ class SelectiveTranslator:
         logger.info("📁 Using SQLite (local)")
         return closing(sqlite3.connect('translations.db', check_same_thread=False))
 
-    def _init_db(self):
-        """Initialize database tables"""
+def _init_db(self):
+    """Initialize database tables"""
+    try:
+        conn = self.get_connection()
+        
+        # SIMPLIFIED: Just check if it's PostgreSQL by trying to create a cursor
+        is_postgres = False
         try:
-            conn = self.get_connection()
+            # Try PostgreSQL style
+            cursor = conn.cursor()
+            is_postgres = True
+        except:
+            # If that fails, it's SQLite
+            is_postgres = False
         
-            # Check if it's PostgreSQL or SQLite
-            is_postgres = hasattr(conn, 'cursor') and not hasattr(conn, '__enter__')
-        
-            if is_postgres:
+        if is_postgres:
             # PostgreSQL connection
             cursor = conn.cursor()
             
-            # Check if tables exist
-            cursor.execute("SELECT to_regclass('public.channel_settings')")
-            table_exists = cursor.fetchone()[0]
-            
-            if table_exists:
-                # Table exists, check and fix column type
-                try:
-                    cursor.execute("ALTER TABLE channel_settings ALTER COLUMN enabled TYPE BOOLEAN USING enabled::boolean")
-                    conn.commit()
-                    logger.info("✅ Fixed boolean column type in existing table")
-                except Exception as alter_error:
-                    logger.warning(f"Could not alter column: {alter_error}")
-                    # Column might already be correct type
-            
-            # Create user_preferences table
+            # Simple table creation
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_preferences (
                     user_id BIGINT PRIMARY KEY,
@@ -180,7 +173,6 @@ class SelectiveTranslator:
                 )
             ''')
             
-            # Create channel_settings table - Use TRUE/FALSE for PostgreSQL
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS channel_settings (
                     channel_id BIGINT PRIMARY KEY,
@@ -189,7 +181,6 @@ class SelectiveTranslator:
                 )
             ''')
             
-            # Create translation_cache table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS translation_cache (
                     cache_key TEXT PRIMARY KEY,
@@ -205,9 +196,8 @@ class SelectiveTranslator:
             cursor.close()
             conn.close()
             logger.info("✅ PostgreSQL tables initialized")
-            
         else:
-            # SQLite connection (using context manager)
+            # SQLite connection
             with conn as sqlite_conn:
                 cursor = sqlite_conn.cursor()
                 
