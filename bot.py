@@ -453,7 +453,7 @@ translator = SelectiveTranslator()
 
 # ========== HELPER FUNCTIONS ==========
 async def send_grouped_translations(message, language_groups):
-    """Send grouped translations by language"""
+    """Send all translations in ONE embed"""
     try:
         # Detect source language
         source_lang = translator.detect_language(message.content)
@@ -462,75 +462,92 @@ async def send_grouped_translations(message, language_groups):
         # Sort languages by number of users (most users first)
         sorted_languages = sorted(language_groups.items(), key=lambda x: len(x[1]), reverse=True)
         
-        # Limit to prevent spam
+        # Limit translations
         sorted_languages = sorted_languages[:MAX_TRANSLATIONS_PER_MESSAGE]
         
-        translations_sent = 0
+        # Don't proceed if no translations needed
+        if not sorted_languages:
+            return False
+        
+        # Count total users
+        total_users = sum(len(users) for _, users in sorted_languages)
+        
+        # Create ONE embed
+        embed = discord.Embed(
+            color=discord.Color.blue(),
+            timestamp=datetime.now()
+        )
+        
+        # Set author
+        embed.set_author(
+            name=f"{message.author.display_name}",
+            icon_url=message.author.avatar.url if message.author.avatar else None
+        )
+        
+        # Original message (always show)
+        original_display = message.content
+        if len(original_display) > 800:
+            original_display = original_display[:797] + "..."
+        
+        embed.add_field(
+            name=f"{source_info['flag']} Original ({source_info['name']})",
+            value=original_display,
+            inline=False
+        )
+        
+        # Add ALL translations to the same embed
+        translations_added = 0
         
         for target_lang, users in sorted_languages:
-            # Skip if no users
-            if not users:
-                continue
+            if translations_added >= 9:  # Max 9 translations per embed
+                break
                 
-            # Translate once per language
+            # Translate
             translated = translator.translate_text(message.content, target_lang, source_lang)
             if not translated:
                 continue
             
             target_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'flag': '🌐'})
-            
-            # Count users
             user_count = len(users)
             
-            # Create embed
-            embed = discord.Embed(color=discord.Color.blue())
-            
-            # Set author
-            embed.set_author(
-                name=f"Message by {message.author.display_name}",
-                icon_url=message.author.avatar.url if message.author.avatar else None
-            )
-            
-            # Original text
-            original_display = message.content
-            if len(original_display) > 500:
-                original_display = original_display[:497] + "..."
-            
-            embed.add_field(
-                name=f"{source_info['flag']} {source_info['name']}",
-                value=original_display,
-                inline=False
-            )
-            
-            # Translated text
+            # Format translation text
             translated_display = translated
-            if len(translated_display) > 500:
-                translated_display = translated_display[:497] + "..."
+            if len(translated_display) > 600:
+                translated_display = translated_display[:597] + "..."
+            
+            # Add translation as a field
+            if user_count > 1:
+                count_text = f"{user_count} users"
+            else:
+                count_text = "1 user"
             
             embed.add_field(
-                name=f"{target_info['flag']} {target_info['name']}",
+                name=f"{target_info['flag']} {target_info['name']} ({count_text})",
                 value=translated_display,
                 inline=False
             )
             
-            # Add user count to footer (clean, no names)
-            if user_count > 1:
-                footer_text = f"For {user_count} users"
+            translations_added += 1
+        
+        # If we have translations, send the embed
+        if translations_added > 0:
+            # Add total users to footer
+            if total_users > 1:
+                footer_text = f"Translated for {total_users} users"
             else:
-                footer_text = "For 1 user"
+                footer_text = "Translated for 1 user"
             
             embed.set_footer(text=footer_text)
             
-            # Send the translation WITHOUT any mentions in message content
+            # Send ONE embed
             await message.reply(
                 embed=embed,
                 mention_author=False
             )
             
-            translations_sent += 1
-            await asyncio.sleep(0.5)  # Small delay between translations
+            return True
         
-        return translations_sent > 0
+        return False
         
     except Exception as e:
         logger.error(f"Error sending grouped translations: {e}")
