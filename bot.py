@@ -53,35 +53,31 @@ LANGUAGES = {
     'no': {'name': 'Norwegian', 'flag': '🇳🇴'},
 }
 
-# Language mapping with flags AND roles
-
+# Language mapping with flags and simplified role names
 LANGUAGES = {
-    'en': {'name': 'English', 'flag': '🇺🇸', 'role_name': 'English Speaker'},
-    'es': {'name': 'Spanish', 'flag': '🇪🇸', 'role_name': 'Spanish Speaker'},
-    'fr': {'name': 'French', 'flag': '🇫🇷', 'role_name': 'French Speaker'},
-    'de': {'name': 'German', 'flag': '🇩🇪', 'role_name': 'German Speaker'},
-    'it': {'name': 'Italian', 'flag': '🇮🇹', 'role_name': 'Italian Speaker'},
-    'pt': {'name': 'Portuguese', 'flag': '🇵🇹', 'role_name': 'Portuguese Speaker'},
-    'ru': {'name': 'Russian', 'flag': '🇷🇺', 'role_name': 'Russian Speaker'},
-    'ja': {'name': 'Japanese', 'flag': '🇯🇵', 'role_name': 'Japanese Speaker'},
-    'ko': {'name': 'Korean', 'flag': '🇰🇷', 'role_name': 'Korean Speaker'},
-    'zh': {'name': 'Chinese', 'flag': '🇨🇳', 'role_name': 'Chinese Speaker'},
-    'ar': {'name': 'Arabic', 'flag': '🇸🇦', 'role_name': 'Arabic Speaker'},
-    'hi': {'name': 'Hindi', 'flag': '🇮🇳', 'role_name': 'Hindi Speaker'},
-    'vi': {'name': 'Vietnamese', 'flag': '🇻🇳', 'role_name': 'Vietnamese Speaker'},
-    'th': {'name': 'Thai', 'flag': '🇹🇭', 'role_name': 'Thai Speaker'},
-    'id': {'name': 'Indonesian', 'flag': '🇮🇩', 'role_name': 'Indonesian Speaker'},
-    'tr': {'name': 'Turkish', 'flag': '🇹🇷', 'role_name': 'Turkish Speaker'},
-    'pl': {'name': 'Polish', 'flag': '🇵🇱', 'role_name': 'Polish Speaker'},
-    'nl': {'name': 'Dutch', 'flag': '🇳🇱', 'role_name': 'Dutch Speaker'},
-    'sv': {'name': 'Swedish', 'flag': '🇸🇪', 'role_name': 'Swedish Speaker'},
-    'da': {'name': 'Danish', 'flag': '🇩🇰', 'role_name': 'Danish Speaker'},
-    'fi': {'name': 'Finnish', 'flag': '🇫🇮', 'role_name': 'Finnish Speaker'},
-    'no': {'name': 'Norwegian', 'flag': '🇳🇴', 'role_name': 'Norwegian Speaker'},
+    'en': {'name': 'English', 'flag': '🇺🇸', 'role_name': 'English'},
+    'es': {'name': 'Spanish', 'flag': '🇪🇸', 'role_name': 'Spanish'},
+    'fr': {'name': 'French', 'flag': '🇫🇷', 'role_name': 'French'},
+    'de': {'name': 'German', 'flag': '🇩🇪', 'role_name': 'German'},
+    'it': {'name': 'Italian', 'flag': '🇮🇹', 'role_name': 'Italian'},
+    'pt': {'name': 'Portuguese', 'flag': '🇵🇹', 'role_name': 'Portuguese'},
+    'ru': {'name': 'Russian', 'flag': '🇷🇺', 'role_name': 'Russian'},
+    'ja': {'name': 'Japanese', 'flag': '🇯🇵', 'role_name': 'Japanese'},
+    'ko': {'name': 'Korean', 'flag': '🇰🇷', 'role_name': 'Korean'},
+    'zh': {'name': 'Chinese', 'flag': '🇨🇳', 'role_name': 'Chinese'},
+    'ar': {'name': 'Arabic', 'flag': '🇸🇦', 'role_name': 'Arabic'},
+    'hi': {'name': 'Hindi', 'flag': '🇮🇳', 'role_name': 'Hindi'},
+    'vi': {'name': 'Vietnamese', 'flag': '🇻🇳', 'role_name': 'Vietnamese'},
+    'th': {'name': 'Thai', 'flag': '🇹🇭', 'role_name': 'Thai'},
+    'id': {'name': 'Indonesian', 'flag': '🇮🇩', 'role_name': 'Indonesian'},
+    'tr': {'name': 'Turkish', 'flag': '🇹🇷', 'role_name': 'Turkish'},
+    'pl': {'name': 'Polish', 'flag': '🇵🇱', 'role_name': 'Polish'},
+    'nl': {'name': 'Dutch', 'flag': '🇳🇱', 'role_name': 'Dutch'},
+    'sv': {'name': 'Swedish', 'flag': '🇸🇪', 'role_name': 'Swedish'},
+    'da': {'name': 'Danish', 'flag': '🇩🇰', 'role_name': 'Danish'},
+    'fi': {'name': 'Finnish', 'flag': '🇫🇮', 'role_name': 'Finnish'},
+    'no': {'name': 'Norwegian', 'flag': '🇳🇴', 'role_name': 'Norwegian'},
 }
-
-# customize role names or keep them as shown above
-
 
 # ========== UI COMPONENTS ==========
 class LanguageSelectView(ui.View):
