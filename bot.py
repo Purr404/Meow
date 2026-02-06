@@ -150,10 +150,10 @@ class SelectiveTranslator:
         try:
             conn = self.get_connection()
         
-        # Check if it's PostgreSQL or SQLite
-        is_postgres = hasattr(conn, 'cursor') and not hasattr(conn, '__enter__')
+            # Check if it's PostgreSQL or SQLite
+            is_postgres = hasattr(conn, 'cursor') and not hasattr(conn, '__enter__')
         
-        if is_postgres:
+            if is_postgres:
             # PostgreSQL connection
             cursor = conn.cursor()
             
