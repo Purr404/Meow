@@ -10,6 +10,9 @@ from googletrans import Translator as GoogleTranslator
 import logging
 from contextlib import closing
 import hashlib
+import psycopg2
+from psycopg2.extras import DictCursor
+from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -104,6 +107,7 @@ class LanguageSelectView(ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
         self.stop()
 
+
 # ========== TRANSLATOR ==========
 class SelectiveTranslator:
     def __init__(self):
@@ -111,47 +115,178 @@ class SelectiveTranslator:
         self.user_cooldowns = {}
         self.translation_cache = {}
         self.message_cooldowns = {}  # Track message translations
-        self.db_path = 'translations.db'
         self._init_db()
         logger.info("✅ Translator initialized")
 
-    def _init_db(self):
-        """Initialize database"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    user_id INTEGER PRIMARY KEY,
-                    language_code TEXT DEFAULT 'en',
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS channel_settings (
-                    channel_id INTEGER PRIMARY KEY,
-                    enabled BOOLEAN DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS translation_cache (
-                    cache_key TEXT PRIMARY KEY,
-                    original_text TEXT,
-                    translated_text TEXT,
-                    target_lang TEXT,
-                    source_lang TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
-
     def get_connection(self):
-        """Get database connection"""
-        return closing(sqlite3.connect(self.db_path, check_same_thread=False))
+        """Get database connection - supports both SQLite and PostgreSQL"""
+        database_url = os.environ.get('DATABASE_URL')
+
+        if database_url:
+            # Use PostgreSQL from Railway
+            try:
+                result = urlparse(database_url)
+                conn = psycopg2.connect(
+                    database=result.path[1:],  # Remove leading slash
+                    user=result.username,
+                    password=result.password,
+                    host=result.hostname,
+                    port=result.port,
+                    sslmode='require'  # Railway requires SSL
+                )
+                logger.info("📊 Using PostgreSQL (Railway)")
+                return conn
+            except Exception as e:
+                logger.error(f"❌ PostgreSQL connection error: {e}")
+                logger.info("🔄 Falling back to SQLite...")
+
+        # Fallback to SQLite for local development
+        import sqlite3
+        from contextlib import closing
+        logger.info("📁 Using SQLite (local)")
+        return closing(sqlite3.connect('translations.db', check_same_thread=False))
+
+    def _init_db(self):  # ← ADD THIS INDENTATION!
+        """Initialize database tables"""
+        try:
+            conn = self.get_connection()
+
+            # SIMPLIFIED: Just check if it's PostgreSQL by trying to create a cursor
+            is_postgres = False
+            try:
+                # Try PostgreSQL style
+                cursor = conn.cursor()
+                is_postgres = True
+            except:
+                # If that fails, it's SQLite
+                is_postgres = False
+
+            if is_postgres:
+                # PostgreSQL connection
+                cursor = conn.cursor()
+
+                # Simple table creation
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS user_preferences (
+                        user_id BIGINT PRIMARY KEY,
+                        language_code TEXT DEFAULT 'en',
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS channel_settings (
+                        channel_id BIGINT PRIMARY KEY,
+                        enabled BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS translation_cache (
+                        cache_key TEXT PRIMARY KEY,
+                        original_text TEXT,
+                        translated_text TEXT,
+                        target_lang TEXT,
+                        source_lang TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.info("✅ PostgreSQL tables initialized")
+            else:
+                # SQLite connection
+                with conn as sqlite_conn:
+                    cursor = sqlite_conn.cursor()
+
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS user_preferences (
+                            user_id INTEGER PRIMARY KEY,
+                            language_code TEXT DEFAULT 'en',
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS channel_settings (
+                            channel_id INTEGER PRIMARY KEY,
+                            enabled BOOLEAN DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS translation_cache (
+                            cache_key TEXT PRIMARY KEY,
+                            original_text TEXT,
+                            translated_text TEXT,
+                            target_lang TEXT,
+                            source_lang TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    sqlite_conn.commit()
+                logger.info("✅ SQLite tables initialized")
+
+        except Exception as e:
+            logger.error(f"❌ Database initialization error: {e}")
+
+
+    def _execute_query(self, query, params=None, fetchone=False, fetchall=False):
+        """Helper method to execute queries for both PostgreSQL and SQLite"""
+        try:
+            conn = self.get_connection()
+            
+            # Check if it's PostgreSQL or SQLite
+            is_postgres = hasattr(conn, 'cursor') and not hasattr(conn, '__enter__')
+            
+            if is_postgres:
+                # PostgreSQL
+                cursor = conn.cursor()
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                
+                result = None
+                if fetchone:
+                    result = cursor.fetchone()
+                elif fetchall:
+                    result = cursor.fetchall()
+                
+                if not query.strip().upper().startswith('SELECT'):
+                    conn.commit()
+                
+                cursor.close()
+                conn.close()
+                return result
+            else:
+                # SQLite (using context manager)
+                with conn as sqlite_conn:
+                    cursor = sqlite_conn.cursor()
+                    if params:
+                        cursor.execute(query, params)
+                    else:
+                        cursor.execute(query)
+                    
+                    result = None
+                    if fetchone:
+                        result = cursor.fetchone()
+                    elif fetchall:
+                        result = cursor.fetchall()
+                    
+                    if not query.strip().upper().startswith('SELECT'):
+                        sqlite_conn.commit()
+                    
+                    return result
+                    
+        except Exception as e:
+            logger.error(f"Database query error: {e}")
+            return None
 
     def translate_text(self, text, target_lang, source_lang="auto"):
         """Translate text using Google Translate"""
@@ -167,18 +302,92 @@ class SelectiveTranslator:
             if cache_key in self.translation_cache:
                 return self.translation_cache[cache_key]
             
+            # Check database cache
+            result = self._execute_query(
+                "SELECT translated_text FROM translation_cache WHERE cache_key = %s AND created_at > CURRENT_TIMESTAMP - INTERVAL '1 day'",
+                (cache_key,),
+                fetchone=True
+            )
+            
+            if result and result[0]:
+                self.translation_cache[cache_key] = result[0]
+                return result[0]
+            
             # Translate
             logger.info(f"Translating: '{text[:50]}...' ({source_lang}) → {target_lang}")
-            result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
+            google_result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
             
-            if result and result.text:
-                self.translation_cache[cache_key] = result.text
-                return result.text
+            if google_result and google_result.text:
+                # Cache in memory
+                self.translation_cache[cache_key] = google_result.text
+                
+                # Cache in database
+                self._execute_query(
+                    '''INSERT INTO translation_cache (cache_key, original_text, translated_text, target_lang, source_lang)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT (cache_key) DO UPDATE SET
+                           translated_text = EXCLUDED.translated_text,
+                           created_at = CURRENT_TIMESTAMP''',
+                    (cache_key, text, google_result.text, target_lang, source_lang)
+                )
+                
+                return google_result.text
             return None
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return None
 
+    def get_user_language(self, user_id):
+        """Get user's preferred language"""
+        result = self._execute_query(
+            "SELECT language_code FROM user_preferences WHERE user_id = %s",
+            (user_id,),
+            fetchone=True
+        )
+        return result[0] if result else 'en'
+
+    def set_user_language(self, user_id, language_code):
+        """Save user's language preference"""
+        self._execute_query(
+            '''INSERT INTO user_preferences (user_id, language_code)
+               VALUES (%s, %s)
+               ON CONFLICT (user_id) DO UPDATE SET
+                   language_code = EXCLUDED.language_code,
+                   updated_at = CURRENT_TIMESTAMP''',
+            (user_id, language_code)
+        )
+
+    def enable_channel(self, channel_id):
+        """Enable auto-translate for a channel"""
+        self._execute_query(
+            '''INSERT INTO channel_settings (channel_id, enabled)
+               VALUES (%s, TRUE)
+               ON CONFLICT (channel_id) DO UPDATE SET
+                   enabled = TRUE,
+                   created_at = CURRENT_TIMESTAMP''',
+            (channel_id,)
+        )
+
+    def disable_channel(self, channel_id):
+        """Disable auto-translate for a channel"""
+        self._execute_query(
+            '''INSERT INTO channel_settings (channel_id, enabled)
+               VALUES (%s, FALSE)
+               ON CONFLICT (channel_id) DO UPDATE SET
+                   enabled = FALSE''',
+            (channel_id,)
+        )
+
+    def is_channel_enabled(self, channel_id):
+        """Check if auto-translate is enabled for channel"""
+        result = self._execute_query(
+            "SELECT enabled FROM channel_settings WHERE channel_id = %s",
+            (channel_id,),
+            fetchone=True
+        )
+        return bool(result[0]) if result else False
+
+    # Keep all other methods exactly the same
     def detect_language(self, text):
         """Detect language of text"""
         try:
@@ -186,10 +395,8 @@ class SelectiveTranslator:
             if len(text) < 2:
                 return 'en'
             
-            # Use Google Translate to detect language
             detection = self.google_translator.detect(text)
             if detection and detection.lang:
-                # Convert to short code if needed
                 lang_code = detection.lang
                 if '-' in lang_code:
                     lang_code = lang_code.split('-')[0]
@@ -201,88 +408,13 @@ class SelectiveTranslator:
 
     def should_translate_for_user(self, message_lang, user_lang, user_id, message_author_id):
         """Determine if we should translate for a user"""
-        # Don't translate if same language
         if message_lang == user_lang:
             return False
-        
-        # Don't translate user's own messages to themselves
         if user_id == message_author_id:
             return False
-        
-        # Don't translate to/from English if user has English set (no need)
         if user_lang == 'en' and message_lang == 'en':
             return False
-        
         return True
-
-    def get_user_language(self, user_id):
-        """Get user's preferred language"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT language_code FROM user_preferences WHERE user_id = ?",
-                    (user_id,)
-                )
-                result = cursor.fetchone()
-                return result[0] if result else 'en'
-        except Exception as e:
-            logger.error(f"DB error: {e}")
-            return 'en'
-
-    def set_user_language(self, user_id, language_code):
-        """Save user's language preference"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO user_preferences (user_id, language_code, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                ''', (user_id, language_code))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"DB error: {e}")
-
-    def enable_channel(self, channel_id):
-        """Enable auto-translate for a channel"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO channel_settings (channel_id, enabled, created_at)
-                    VALUES (?, 1, CURRENT_TIMESTAMP)
-                ''', (channel_id,))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"DB error: {e}")
-
-    def disable_channel(self, channel_id):
-        """Disable auto-translate for a channel"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO channel_settings (channel_id, enabled)
-                    VALUES (?, 0)
-                ''', (channel_id,))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"DB error: {e}")
-
-    def is_channel_enabled(self, channel_id):
-        """Check if auto-translate is enabled for channel"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT enabled FROM channel_settings WHERE channel_id = ?",
-                    (channel_id,)
-                )
-                result = cursor.fetchone()
-                return bool(result[0]) if result else False
-        except Exception as e:
-            logger.error(f"DB error: {e}")
-            return False
 
     def check_cooldown(self, user_id):
         """Check user cooldown"""
@@ -300,16 +432,15 @@ class SelectiveTranslator:
         now = datetime.now()
         last_time = self.message_cooldowns.get(message_id)
         
-        # Clear old entries
         old_messages = []
         for msg_id, timestamp in self.message_cooldowns.items():
-            if (now - timestamp).seconds > 300:  # 5 minutes
+            if (now - timestamp).seconds > 300:
                 old_messages.append(msg_id)
         
         for msg_id in old_messages:
             self.message_cooldowns.pop(msg_id, None)
         
-        if last_time and (now - last_time).seconds < 10:  # 10 second cooldown per message
+        if last_time and (now - last_time).seconds < 10:
             return False
         
         self.message_cooldowns[message_id] = now
@@ -322,7 +453,7 @@ translator = SelectiveTranslator()
 
 # ========== HELPER FUNCTIONS ==========
 async def send_grouped_translations(message, language_groups):
-    """Send grouped translations by language"""
+    """Send all translations in ONE embed"""
     try:
         # Detect source language
         source_lang = translator.detect_language(message.content)
@@ -331,82 +462,92 @@ async def send_grouped_translations(message, language_groups):
         # Sort languages by number of users (most users first)
         sorted_languages = sorted(language_groups.items(), key=lambda x: len(x[1]), reverse=True)
         
-        # Limit to prevent spam
+        # Limit translations
         sorted_languages = sorted_languages[:MAX_TRANSLATIONS_PER_MESSAGE]
         
-        translations_sent = 0
+        # Don't proceed if no translations needed
+        if not sorted_languages:
+            return False
+        
+        # Count total users
+        total_users = sum(len(users) for _, users in sorted_languages)
+        
+        # Create ONE embed
+        embed = discord.Embed(
+            color=discord.Color.blue(),
+
+        )
+        
+        # Set author
+        embed.set_author(
+            name=f"{message.author.display_name}",
+            icon_url=message.author.avatar.url if message.author.avatar else None
+        )
+        
+        # Original message (always show)
+        original_display = message.content
+        if len(original_display) > 800:
+            original_display = original_display[:797] + "..."
+        
+        embed.add_field(
+            name=f"{source_info['flag']} Original ({source_info['name']})",
+            value=original_display,
+            inline=False
+        )
+        
+        # Add ALL translations to the same embed
+        translations_added = 0
         
         for target_lang, users in sorted_languages:
-            # Skip if no users
-            if not users:
-                continue
+            if translations_added >= 9:  # Max 9 translations per embed
+                break
                 
-            # Translate once per language
+            # Translate
             translated = translator.translate_text(message.content, target_lang, source_lang)
             if not translated:
                 continue
             
             target_info = LANGUAGES.get(target_lang, {'name': target_lang.upper(), 'flag': '🌐'})
+            user_count = len(users)
             
-            # Create mention string for users
-            mention_list = []
-            for user_id in users:
-                user = message.guild.get_member(user_id)
-                if user:
-                    mention_list.append(user.mention)
-            
-            if not mention_list:
-                continue
-            
-            # Create embed
-            embed = discord.Embed(color=discord.Color.blue())
-            
-            # Set author
-            embed.set_author(
-                name=f"Message by {message.author.display_name}",
-                icon_url=message.author.avatar.url if message.author.avatar else None
-            )
-            
-            # Original text
-            original_display = message.content
-            if len(original_display) > 500:
-                original_display = original_display[:497] + "..."
-            
-            embed.add_field(
-                name=f"{source_info['flag']} {source_info['name']}",
-                value=original_display,
-                inline=False
-            )
-            
-            # Translated text
+            # Format translation text
             translated_display = translated
-            if len(translated_display) > 500:
-                translated_display = translated_display[:497] + "..."
+            if len(translated_display) > 600:
+                translated_display = translated_display[:597] + "..."
+            
+            # Add translation as a field
+            if user_count > 1:
+                count_text = f"{user_count} users"
+            else:
+                count_text = "1 user"
             
             embed.add_field(
-                name=f"{target_info['flag']} {target_info['name']}",
+                name=f"{target_info['flag']} {target_info['name']} ({count_text})",
                 value=translated_display,
                 inline=False
             )
             
-            # Send the translation
-            if len(mention_list) > 1:
-                # Group mention
-                mentions_text = f"**For:** {', '.join(mention_list)}"
+            translations_added += 1
+        
+        # If we have translations, send the embed
+        if translations_added > 0:
+            # Add total users to footer
+            if total_users > 1:
+                footer_text = f"Translated for {total_users} users"
             else:
-                # Single mention
-                mentions_text = f"**For:** {mention_list[0]}"
+                footer_text = "Translated for 1 user"
             
+            embed.set_footer(text=footer_text)
+            
+            # Send ONE embed
             await message.reply(
-                f"{mentions_text}\n",
                 embed=embed,
                 mention_author=False
             )
             
-            translations_sent += 1
-            await asyncio.sleep(0.5)  # Small delay between translations
+            return True
         
-        return translations_sent > 0
+        return False
         
     except Exception as e:
         logger.error(f"Error sending grouped translations: {e}")
