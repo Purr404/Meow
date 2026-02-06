@@ -107,6 +107,7 @@ class LanguageSelectView(ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
         self.stop()
 
+
 # ========== TRANSLATOR ==========
 class SelectiveTranslator:
     def __init__(self):
@@ -120,7 +121,7 @@ class SelectiveTranslator:
     def get_connection(self):
         """Get database connection - supports both SQLite and PostgreSQL"""
         database_url = os.environ.get('DATABASE_URL')
-        
+
         if database_url:
             # Use PostgreSQL from Railway
             try:
@@ -138,85 +139,49 @@ class SelectiveTranslator:
             except Exception as e:
                 logger.error(f"❌ PostgreSQL connection error: {e}")
                 logger.info("🔄 Falling back to SQLite...")
-        
+
         # Fallback to SQLite for local development
         import sqlite3
         from contextlib import closing
         logger.info("📁 Using SQLite (local)")
         return closing(sqlite3.connect('translations.db', check_same_thread=False))
 
-def _init_db(self):
-    """Initialize database tables"""
-    try:
-        conn = self.get_connection()
-        
-        # SIMPLIFIED: Just check if it's PostgreSQL by trying to create a cursor
-        is_postgres = False
+    def _init_db(self):  # ← ADD THIS INDENTATION!
+        """Initialize database tables"""
         try:
-            # Try PostgreSQL style
-            cursor = conn.cursor()
-            is_postgres = True
-        except:
-            # If that fails, it's SQLite
+            conn = self.get_connection()
+
+            # SIMPLIFIED: Just check if it's PostgreSQL by trying to create a cursor
             is_postgres = False
-        
-        if is_postgres:
-            # PostgreSQL connection
-            cursor = conn.cursor()
-            
-            # Simple table creation
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    user_id BIGINT PRIMARY KEY,
-                    language_code TEXT DEFAULT 'en',
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS channel_settings (
-                    channel_id BIGINT PRIMARY KEY,
-                    enabled BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS translation_cache (
-                    cache_key TEXT PRIMARY KEY,
-                    original_text TEXT,
-                    translated_text TEXT,
-                    target_lang TEXT,
-                    source_lang TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
-            logger.info("✅ PostgreSQL tables initialized")
-        else:
-            # SQLite connection
-            with conn as sqlite_conn:
-                cursor = sqlite_conn.cursor()
-                
+            try:
+                # Try PostgreSQL style
+                cursor = conn.cursor()
+                is_postgres = True
+            except:
+                # If that fails, it's SQLite
+                is_postgres = False
+
+            if is_postgres:
+                # PostgreSQL connection
+                cursor = conn.cursor()
+
+                # Simple table creation
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS user_preferences (
-                        user_id INTEGER PRIMARY KEY,
+                        user_id BIGINT PRIMARY KEY,
                         language_code TEXT DEFAULT 'en',
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                
+
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS channel_settings (
-                        channel_id INTEGER PRIMARY KEY,
-                        enabled BOOLEAN DEFAULT 0,
+                        channel_id BIGINT PRIMARY KEY,
+                        enabled BOOLEAN DEFAULT FALSE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                
+
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS translation_cache (
                         cache_key TEXT PRIMARY KEY,
@@ -227,12 +192,49 @@ def _init_db(self):
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                
-                sqlite_conn.commit()
-            logger.info("✅ SQLite tables initialized")
-            
-    except Exception as e:
-        logger.error(f"❌ Database initialization error: {e}")
+
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.info("✅ PostgreSQL tables initialized")
+            else:
+                # SQLite connection
+                with conn as sqlite_conn:
+                    cursor = sqlite_conn.cursor()
+
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS user_preferences (
+                            user_id INTEGER PRIMARY KEY,
+                            language_code TEXT DEFAULT 'en',
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS channel_settings (
+                            channel_id INTEGER PRIMARY KEY,
+                            enabled BOOLEAN DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS translation_cache (
+                            cache_key TEXT PRIMARY KEY,
+                            original_text TEXT,
+                            translated_text TEXT,
+                            target_lang TEXT,
+                            source_lang TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    sqlite_conn.commit()
+                logger.info("✅ SQLite tables initialized")
+
+        except Exception as e:
+            logger.error(f"❌ Database initialization error: {e}")
+
 
     def _execute_query(self, query, params=None, fetchone=False, fetchall=False):
         """Helper method to execute queries for both PostgreSQL and SQLite"""
