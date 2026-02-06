@@ -591,63 +591,62 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # Process commands
-    await bot.process_commands(message)
-    
-    # Ignore bots
-    if message.author.bot:
-        return
-    
-    # Check if auto-translate is enabled for this channel
-    if not translator.is_channel_enabled(message.channel.id):
-        return
+    try:
+        # Process commands
+        await bot.process_commands(message)
 
-    # Skip if it starts with command prefix (already processed)
-    if message.content.startswith('!'):
-        return
-    
-    # Skip short messages
-    if len(message.content.strip()) < 2:
-        return
-    
-    # Check message cooldown (prevent duplicate translations)
-    if not translator.check_message_cooldown(message.id):
-        return
-    
-    logger.info(f"📨 Processing message from {message.author}")
-    
-    # Detect source language
-    source_lang = translator.detect_language(message.content)
-    logger.info(f"🔍 Detected language: {source_lang}")
-    
-    # Get user language with guild context
-    if isinstance(message.channel, discord.TextChannel):
+        # Ignore bots
+        if message.author.bot:
+            return
+
+        # Check if auto-translate is enabled for this channel
+        if not translator.is_channel_enabled(message.channel.id):
+            return
+
+        # Skip if it starts with command prefix (already processed)
+        if message.content.startswith('!'):
+            return
+
+        # Skip short messages
+        if len(message.content.strip()) < 2:
+            return
+
+        # Check message cooldown (prevent duplicate translations)
+        if not translator.check_message_cooldown(message.id):
+            return
+
+        logger.info(f"📨 Processing message from {message.author}")
+
+        # Detect source language
         source_lang = translator.detect_language(message.content)
         logger.info(f"🔍 Detected language: {source_lang}")
-        
+
+        # Only proceed if it's a text channel
+        if not isinstance(message.channel, discord.TextChannel):
+            return
+
         # Get all members in the channel
         members = [member for member in message.channel.members if not member.bot]
-        
+
         # Group users by their preferred language
         language_groups = {}
-        
+
         for member in members:
             # Pass guild to get_user_language
             user_lang = translator.get_user_language(member.id, message.guild)
-            
+
             # Check if we should translate for this user
             if translator.should_translate_for_user(source_lang, user_lang, member.id, message.author.id):
                 # Add user to language group
                 if user_lang not in language_groups:
                     language_groups[user_lang] = []
                 language_groups[user_lang].append(member.id)
-   
-        
+
         # If we have languages to translate to, send grouped translations
         if language_groups:
             logger.info(f"🎯 Translating to {len(language_groups)} language groups")
             await send_grouped_translations(message, language_groups)
-            
+
     except Exception as e:
         logger.error(f"Error in auto-translation: {e}")
 
