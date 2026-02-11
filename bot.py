@@ -108,6 +108,41 @@ class LanguageSelectView(ui.View):
         self.stop()
 
 
+# TRANSLATION BUTTON -------
+
+class TranslationButtonView(View):
+    def __init__(self, message_content, message_author_id):
+        super().__init__(timeout=60)
+        self.message_content = message_content
+        self.message_author_id = message_author_id
+        
+    @discord.ui.button(label="AI", style=discord.ButtonStyle.primary, emoji="🤖")
+    async def translate_button(self, interaction: discord.Interaction, button: Button):
+        # This is where the magic happens
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        
+        # Get user's language from their ROLE (you already built this!)
+        user_lang = translator.get_user_language(interaction.user.id, interaction.guild)
+        
+        # Detect source language
+        source_lang = translator.detect_language(self.message_content)
+        
+        # Translate
+        translated = translator.translate_text(self.message_content, user_lang, source_lang)
+        
+        if translated:
+            lang_info = LANGUAGES.get(user_lang, {'flag': '🌐', 'name': user_lang.upper()})
+            embed = discord.Embed(
+                title=f"{lang_info['flag']} Translation ({lang_info['name']})",
+                description=translated[:2000],
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text=f"Original: {self.message_content[:100]}...")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Could not translate this message.", ephemeral=True)
+
+
 # ========== TRANSLATOR ==========
 class SelectiveTranslator:
     def __init__(self):
@@ -554,10 +589,9 @@ async def send_grouped_translations(message, language_groups):
             embed.set_footer(text=footer_text)
             
             # Send ONE embed
-            await message.reply(
-                embed=embed,
-                mention_author=False
-            )
+            # Create the button view and attach it to the reply
+            view = TranslationButtonView(message.content, message.author.id)
+            await message.reply(embed=embed, view=view, mention_author=False)
             
             return True
         
