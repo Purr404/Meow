@@ -3,3 +3,4 @@ requests>=2.28.0
 python-dotenv>=1.0.0
 googletrans==4.0.0-rc1
 psycopg2-binary
+deepl
