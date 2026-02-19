@@ -14,6 +14,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 from urllib.parse import urlparse
 import random
+import deepl
 
 load_dotenv()
 
