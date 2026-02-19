@@ -118,7 +118,37 @@ class SelectiveTranslator:
         self.translation_cache = {}
         self.message_cooldowns = {}  # Track message translations
         self._init_db()
+        self.deepl_translator = None
+        self.deepl_supported = []
+        self._init_deepl()
         logger.info("✅ Translator initialized")
+
+    def _init_deepl(self):
+        """Initialize DeepL translator if API key is available."""
+        deepl_key = os.getenv('DEEPL_API_KEY')
+        if deepl_key:
+            try:
+                self.deepl_translator = deepl.Translator(deepl_key)
+                self.deepl_supported = [lang.code for lang in self.deepl_translator.get_target_languages()]
+                logger.info(f"✅ DeepL initialized with {len(self.deepl_supported)} languages")
+            except Exception as e:
+                logger.error(f"❌ DeepL initialization failed: {e}")
+                self.deepl_translator = None
+        else:
+            logger.info("ℹ️ No DeepL API key, using Google Translate only")
+
+    def _to_deepl_code(self, lang_code):
+        """Convert your language codes to DeepL format."""
+        mapping = {
+            'en': 'EN', 'es': 'ES', 'fr': 'FR', 'de': 'DE', 'it': 'IT',
+            'pt': 'PT', 'ru': 'RU', 'ja': 'JA', 'ko': 'KO', 'zh': 'ZH',
+            # 'zh-TW': 'ZH-HANT',   # uncomment if you add Traditional Chinese to LANGUAGES
+            'ar': 'AR', 'hi': 'HI', 'vi': 'VI', 'th': 'TH', 'id': 'ID',
+            'tr': 'TR', 'pl': 'PL', 'nl': 'NL', 'sv': 'SV', 'da': 'DA',
+            'fi': 'FI', 'no': 'NB',
+        }
+        return mapping.get(lang_code, lang_code.upper())
+
 
     def get_connection(self):
         """Get database connection - supports both SQLite and PostgreSQL"""
@@ -307,50 +337,70 @@ class SelectiveTranslator:
             return None
 
     def translate_text(self, text, target_lang, source_lang="auto"):
-        """Translate text using Google Translate"""
+        """Translate using DeepL first, fallback to Google Translate."""
         try:
             text = text.strip()
             if not text or len(text) < 2:
                 return None
-            
-            # Cache key
+
             cache_key = hashlib.md5(f"{text}:{target_lang}:{source_lang}".encode()).hexdigest()
-            
-            # Check cache
+
             if cache_key in self.translation_cache:
                 return self.translation_cache[cache_key]
-            
-            # Check database cache
+
             result = self._execute_query(
                 "SELECT translated_text FROM translation_cache WHERE cache_key = %s AND created_at > CURRENT_TIMESTAMP - INTERVAL '1 day'",
                 (cache_key,),
                 fetchone=True
             )
-            
             if result and result[0]:
                 self.translation_cache[cache_key] = result[0]
                 return result[0]
-            
-            # Translate
-            logger.info(f"Translating: '{text[:50]}...' ({source_lang}) → {target_lang}")
-            google_result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
-            
-            if google_result and google_result.text:
-                # Cache in memory
-                self.translation_cache[cache_key] = google_result.text
-                
-                # Cache in database
+
+            translated = None
+
+            # ----- DeepL -----
+            if self.deepl_translator:
+                deepl_target = self._to_deepl_code(target_lang)
+                if deepl_target in self.deepl_supported:
+                    try:
+                        deepl_source = None if source_lang == 'auto' else self._to_deepl_code(source_lang)
+                        if deepl_source and deepl_source not in self.deepl_supported:
+                            deepl_source = None
+                        result = self.deepl_translator.translate_text(
+                            text,
+                            target_lang=deepl_target,
+                            source_lang=deepl_source
+                        )
+                        if result and result.text:
+                            translated = result.text
+                            logger.info(f"✅ DeepL: '{text[:30]}...' → {target_lang}")
+                    except deepl.DeepLException as e:
+                        logger.warning(f"DeepL error (fallback to Google): {e}")
+                    except Exception as e:
+                        logger.warning(f"Unexpected DeepL error: {e}")
+
+            # ----- Google fallback -----
+            if not translated:
+                logger.info(f"🔄 Using Google Translate for {target_lang}")
+                google_result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
+                if google_result and google_result.text:
+                    translated = google_result.text
+
+            if translated:
+                self.translation_cache[cache_key] = translated
                 self._execute_query(
                     '''INSERT INTO translation_cache (cache_key, original_text, translated_text, target_lang, source_lang)
                        VALUES (%s, %s, %s, %s, %s)
                        ON CONFLICT (cache_key) DO UPDATE SET
                            translated_text = EXCLUDED.translated_text,
                            created_at = CURRENT_TIMESTAMP''',
-                    (cache_key, text, google_result.text, target_lang, source_lang)
+                    (cache_key, text, translated, target_lang, source_lang)
                 )
-                
-                return google_result.text
+                return translated
+
             return None
+
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return None
