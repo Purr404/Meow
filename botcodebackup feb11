@@ -13,6 +13,8 @@ import hashlib
 import psycopg2
 from psycopg2.extras import DictCursor
 from urllib.parse import urlparse
+import random
+import deepl
 
 load_dotenv()
 
@@ -192,6 +194,13 @@ class SelectiveTranslator:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS welcome_channels (
+                        guild_id BIGINT PRIMARY KEY,
+                        channel_id BIGINT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
 
                 conn.commit()
                 cursor.close()
@@ -225,6 +234,15 @@ class SelectiveTranslator:
                             translated_text TEXT,
                             target_lang TEXT,
                             source_lang TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
+                    # For PostgreSQL
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS welcome_channels (
+                            guild_id BIGINT PRIMARY KEY,
+                            channel_id BIGINT,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     ''')
@@ -979,6 +997,105 @@ async def on_member_update(before, after):
                     except:
                         pass  # User might have DMs disabled
                     break
+
+
+
+# =======WELCOME======================
+
+class Welcome(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.translator = translator  # reference to your global translator instance
+        self.welcome_messages = [
+            "🌟 Welcome {member}! We're so glad you joined **{guild}**!",
+            "🎉 A wild {member} appeared! Welcome to **{guild}**!",
+            "🤝 Give it up for {member}! Welcome to our awesome community!",
+            "🚀 {member} just landed in **{guild}**. Prepare for adventure!",
+            "💫 Shine bright like a diamond, {member}! Welcome aboard!",
+            "🎈 Pop goes the confetti! Welcome {member} to **{guild}**!",
+            "🌍 Another traveler arrives! Welcome {member}, enjoy your stay!",
+            "📢 Attention everyone! Please welcome {member} to the server!",
+            "🍰 Welcome {member}! We have cake (and cool people) here!",
+            "🔔 Ding dong! {member} is here! Let's make them feel at home!"
+        ]
+        print("✅ Welcome cog loaded!")
+
+    # Helper to run DB operations in a thread
+    def _db_get_welcome_channel(self, guild_id):
+        result = self.translator._execute_query(
+            "SELECT channel_id FROM welcome_channels WHERE guild_id = %s",
+            (guild_id,),
+            fetchone=True
+        )
+        return result[0] if result else None
+
+    def _db_set_welcome_channel(self, guild_id, channel_id):
+        self.translator._execute_query(
+            """INSERT INTO welcome_channels (guild_id, channel_id)
+               VALUES (%s, %s)
+               ON CONFLICT (guild_id) DO UPDATE SET channel_id = %s""",
+            (guild_id, channel_id, channel_id)
+        )
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        # Run DB query in thread
+        channel_id = await asyncio.to_thread(self._db_get_welcome_channel, member.guild.id)
+        if not channel_id:
+            return
+        channel = member.guild.get_channel(channel_id)
+        if not channel:
+            return
+
+        template = random.choice(self.welcome_messages)
+        welcome_text = template.format(
+            member=member.mention,
+            guild=member.guild.name,
+            count=len(member.guild.members)
+        )
+
+        embed = discord.Embed(
+            title="👋 New Member!",
+            description=welcome_text,
+            color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(
+            text=f"Member #{len(member.guild.members)}",
+            icon_url=member.guild.icon.url if member.guild.icon else None
+        )
+        embed.timestamp = discord.utils.utcnow()
+
+        try:
+            await channel.send(embed=embed)
+        except Exception as e:
+            print(f"Failed to send welcome message: {e}")
+
+    @commands.command(name='setwelcome')
+    @commands.has_permissions(administrator=True)
+    async def set_welcome_channel(self, ctx, channel: discord.TextChannel):
+        # Run DB insert in thread
+        await asyncio.to_thread(self._db_set_welcome_channel, ctx.guild.id, channel.id)
+
+        embed = discord.Embed(
+            title="✅ Welcome channel set!",
+            description=f"Welcome messages will now be sent to {channel.mention}",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+
+    @set_welcome_channel.error
+    async def set_welcome_channel_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ You need administrator permission to use this command.")
+
+# ========END=========
+async def setup_hook():
+    await bot.add_cog(Welcome(bot))
+    # Optional: print loaded commands for debugging
+    print("✅ Cog added. Loaded commands:", [cmd.name for cmd in bot.commands])
+
+bot.setup_hook = setup_hook
 
 # ========== RUN BOT ==========
 if __name__ == "__main__":
