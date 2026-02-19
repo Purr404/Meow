@@ -1069,7 +1069,7 @@ class Welcome(commands.Cog):
             await ctx.send("❌ You need administrator permission to use this command.")
 
 # ========END=========
-await bot.add_cog(Welcome(bot))
+bot.add_cog(Welcome(bot))
 
 # ========== RUN BOT ==========
 if __name__ == "__main__":
