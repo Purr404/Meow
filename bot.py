@@ -109,6 +109,34 @@ class LanguageSelectView(ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
         self.stop()
 
+#  AI BUTTON ====
+
+class TranslationButtonView(ui.View):
+    def __init__(self, original_text, author_id):
+        super().__init__(timeout=60)
+        self.original_text = original_text
+        self.author_id = author_id
+
+    @discord.ui.button(label="AI", style=discord.ButtonStyle.primary, emoji="🤖")
+    async def translate_for_me(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        user_lang = translator.get_user_language(interaction.user.id, interaction.guild)
+        source_lang = translator.detect_language(self.original_text)
+        translated = translator.translate_text(self.original_text, user_lang, source_lang)
+        if translated:
+            lang_info = LANGUAGES.get(user_lang, {'flag': '🌐', 'name': user_lang.upper()})
+            embed = discord.Embed(
+                title=f"{lang_info['flag']} Private Translation ({lang_info['name']})",
+                description=translated[:2000],
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text=f"Original: {self.original_text[:100]}...")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Could not translate.", ephemeral=True)
+
+# END AI -=======
+
 
 # ========== TRANSLATOR ==========
 class SelectiveTranslator:
