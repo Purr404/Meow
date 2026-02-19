@@ -638,10 +638,10 @@ async def send_grouped_translations(message, language_groups):
 # ========== EVENT HANDLERS ==========
 @bot.event
 async def on_ready():
+    await bot.tree.sync()                    
     logger.info(f'✅ {bot.user} is online!')
-    
     await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching,
+        type=discord.ActivityType.
         name="Meow~"
     ))
 
@@ -943,7 +943,7 @@ async def ping(ctx):
 
 @bot.command(name="synclang")
 async def sync_language(ctx):
-    """Sync your language preference with your current roles"""
+    """Sync your language preference with your current rol,es"""
     user_lang_from_role = None
     detected_role = None
     
@@ -1146,6 +1146,33 @@ async def setup_hook():
     print("✅ Cog added. Loaded commands:", [cmd.name for cmd in bot.commands])
 
 bot.setup_hook = setup_hook
+
+# ========== CONTEXT MENU TRANSLATION ==========
+@bot.tree.context_menu(name="Translate to my language")
+async def translate_context_menu(interaction: discord.Interaction, message: discord.Message):
+    """Right-click any message → Apps → Translate to my language (private)"""
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    # Get user's language from their role
+    user_lang = translator.get_user_language(interaction.user.id, interaction.guild)
+
+    # Detect source language
+    source_lang = translator.detect_language(message.content)
+
+    # Translate (uses DeepL → Google fallback)
+    translated = translator.translate_text(message.content, user_lang, source_lang)
+
+    if translated:
+        lang_info = LANGUAGES.get(user_lang, {'flag': '🌐', 'name': user_lang.upper()})
+        embed = discord.Embed(
+            title=f"{lang_info['flag']} Private Translation ({lang_info['name']})",
+            description=translated[:2000],
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"Original: {message.content[:100]}...")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    else:
+        await interaction.followup.send("❌ Could not translate this message.", ephemeral=True)
 
 # ========== RUN BOT ==========
 if __name__ == "__main__":
