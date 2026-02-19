@@ -980,6 +980,97 @@ async def on_member_update(before, after):
                         pass  # User might have DMs disabled
                     break
 
+
+
+# =======WELCOME======================
+
+import random
+
+class Welcome(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # 10 different welcome message templates
+        self.welcome_messages = [
+            "🌟 Welcome {member}! We're so glad you joined **{guild}**!",
+            "🎉 A wild {member} appeared! Welcome to **{guild}**!",
+            "🤝 Give it up for {member}! Welcome to our awesome community!",
+            "🚀 {member} just landed in **{guild}**. Prepare for adventure!",
+            "💫 Shine bright like a diamond, {member}! Welcome aboard!",
+            "🎈 Pop goes the confetti! Welcome {member} to **{guild}**!",
+            "🌍 Another traveler arrives! Welcome {member}, enjoy your stay!",
+            "📢 Attention everyone! Please welcome {member} to the server!",
+            "🍰 Welcome {member}! We have cake (and cool people) here!",
+            "🔔 Ding dong! {member} is here! Let's make them feel at home!"
+        ]
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Send a random welcome embed when a new member joins."""
+        guild = member.guild
+        async with self.bot.db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT channel_id FROM welcome_channels WHERE guild_id = $1",
+                guild.id
+            )
+        if not row:
+            return
+
+        channel = guild.get_channel(row['channel_id'])
+        if not channel:
+            return
+
+        # Pick a random welcome message and format it
+        template = random.choice(self.welcome_messages)
+        welcome_text = template.format(
+            member=member.mention,
+            guild=guild.name,
+            count=len(guild.members)
+        )
+
+        # Create the embed
+        embed = discord.Embed(
+            title=f"👋 New Member!",
+            description=welcome_text,
+            color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(text=f"Member #{len(guild.members)}", icon_url=guild.icon.url if guild.icon else None)
+        embed.timestamp = discord.utils.utcnow()
+
+        try:
+            await channel.send(embed=embed)
+        except Exception as e:
+            print(f"Failed to send welcome message: {e}")
+
+    # ------------------------------------------------------------------
+    # Command to set the welcome channel (unchanged)
+    # ------------------------------------------------------------------
+    @commands.command(name='setwelcome')
+    @commands.has_permissions(administrator=True)
+    async def set_welcome_channel(self, ctx, channel: discord.TextChannel):
+        """Set the channel where welcome messages will be sent."""
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO welcome_channels (guild_id, channel_id)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2
+            """, ctx.guild.id, channel.id)
+
+        embed = discord.Embed(
+            title="✅ Welcome channel set!",
+            description=f"Welcome messages will now be sent to {channel.mention}",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+
+    @set_welcome_channel.error
+    async def set_welcome_channel_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ You need administrator permission to use this command.")
+
+# ========END=========
+await bot.add_cog(Welcome(bot))
+
 # ========== RUN BOT ==========
 if __name__ == "__main__":
     token = os.getenv('DISCORD_BOT_TOKEN')
