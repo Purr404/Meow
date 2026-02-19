@@ -638,12 +638,10 @@ async def send_grouped_translations(message, language_groups):
 # ========== EVENT HANDLERS ==========
 @bot.event
 async def on_ready():
-    await bot.tree.sync()                    
+    await bot.tree.sync()  
     logger.info(f'✅ {bot.user} is online!')
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.
-        name="Meow~"
-    ))
+    # Optionally, you can set a simple presence without an activity:
+    await bot.change_presence(status=discord.Status.online)
 
 @bot.event
 async def on_message(message):
