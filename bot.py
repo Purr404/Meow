@@ -994,13 +994,10 @@ async def on_member_update(before, after):
 
 # =======WELCOME======================
 
-
 class Welcome(commands.Cog):
     def __init__(self, bot):
-        super().__init__()
         self.bot = bot
-        print("✅ Welcome cog loaded!")
-        # 10 different welcome message templates
+        self.translator = translator  # reference to your global translator instance
         self.welcome_messages = [
             "🌟 Welcome {member}! We're so glad you joined **{guild}**!",
             "🎉 A wild {member} appeared! Welcome to **{guild}**!",
@@ -1013,39 +1010,52 @@ class Welcome(commands.Cog):
             "🍰 Welcome {member}! We have cake (and cool people) here!",
             "🔔 Ding dong! {member} is here! Let's make them feel at home!"
         ]
+        print("✅ Welcome cog loaded!")
+
+    # Helper to run DB operations in a thread
+    def _db_get_welcome_channel(self, guild_id):
+        result = self.translator._execute_query(
+            "SELECT channel_id FROM welcome_channels WHERE guild_id = %s",
+            (guild_id,),
+            fetchone=True
+        )
+        return result[0] if result else None
+
+    def _db_set_welcome_channel(self, guild_id, channel_id):
+        self.translator._execute_query(
+            """INSERT INTO welcome_channels (guild_id, channel_id)
+               VALUES (%s, %s)
+               ON CONFLICT (guild_id) DO UPDATE SET channel_id = %s""",
+            (guild_id, channel_id, channel_id)
+        )
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        """Send a random welcome embed when a new member joins."""
-        guild = member.guild
-        async with self.bot.db_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT channel_id FROM welcome_channels WHERE guild_id = $1",
-                guild.id
-            )
-        if not row:
+        # Run DB query in thread
+        channel_id = await asyncio.to_thread(self._db_get_welcome_channel, member.guild.id)
+        if not channel_id:
             return
-
-        channel = guild.get_channel(row['channel_id'])
+        channel = member.guild.get_channel(channel_id)
         if not channel:
             return
 
-        # Pick a random welcome message and format it
         template = random.choice(self.welcome_messages)
         welcome_text = template.format(
             member=member.mention,
-            guild=guild.name,
-            count=len(guild.members)
+            guild=member.guild.name,
+            count=len(member.guild.members)
         )
 
-        # Create the embed
         embed = discord.Embed(
-            title=f"👋 New Member!",
+            title="👋 New Member!",
             description=welcome_text,
             color=discord.Color.gold()
         )
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(text=f"Member #{len(guild.members)}", icon_url=guild.icon.url if guild.icon else None)
+        embed.set_footer(
+            text=f"Member #{len(member.guild.members)}",
+            icon_url=member.guild.icon.url if member.guild.icon else None
+        )
         embed.timestamp = discord.utils.utcnow()
 
         try:
@@ -1053,19 +1063,11 @@ class Welcome(commands.Cog):
         except Exception as e:
             print(f"Failed to send welcome message: {e}")
 
-    # ------------------------------------------------------------------
-    # Command to set the welcome channel (unchanged)
-    # ------------------------------------------------------------------
     @commands.command(name='setwelcome')
     @commands.has_permissions(administrator=True)
     async def set_welcome_channel(self, ctx, channel: discord.TextChannel):
-        """Set the channel where welcome messages will be sent."""
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO welcome_channels (guild_id, channel_id)
-                VALUES ($1, $2)
-                ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2
-            """, ctx.guild.id, channel.id)
+        # Run DB insert in thread
+        await asyncio.to_thread(self._db_set_welcome_channel, ctx.guild.id, channel.id)
 
         embed = discord.Embed(
             title="✅ Welcome channel set!",
