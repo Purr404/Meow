@@ -988,7 +988,9 @@ async def on_member_update(before, after):
 
 class Welcome(commands.Cog):
     def __init__(self, bot):
+        super().__init__()
         self.bot = bot
+        print("✅ Welcome cog loaded!")
         # 10 different welcome message templates
         self.welcome_messages = [
             "🌟 Welcome {member}! We're so glad you joined **{guild}**!",
