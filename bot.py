@@ -984,7 +984,6 @@ async def on_member_update(before, after):
 
 # =======WELCOME======================
 
-import random
 
 class Welcome(commands.Cog):
     def __init__(self, bot):
