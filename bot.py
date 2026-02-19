@@ -673,41 +673,63 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
+    # Process commands
     await bot.process_commands(message)
-
+    
+    # Ignore bots
     if message.author.bot:
         return
+    
+    # Check if auto-translate is enabled for this channel
     if not translator.is_channel_enabled(message.channel.id):
         return
+
+    # Skip if it starts with command prefix (already processed)
     if message.content.startswith('!'):
         return
+    
+    # Skip short messages
     if len(message.content.strip()) < 2:
         return
+    
+    # Check message cooldown (prevent duplicate translations)
     if not translator.check_message_cooldown(message.id):
         return
-
-    logger.info(f"📨 Adding AI button to {message.author}")
-
+    
+    logger.info(f"📨 Processing message from {message.author}")
+    
+    # Detect source language
+    source_lang = translator.detect_language(message.content)
+    logger.info(f"🔍 Detected language: {source_lang}")
+    
+    # Get all members in the channel
     try:
-        if not isinstance(message.channel, discord.TextChannel):
+        if isinstance(message.channel, discord.TextChannel):
+            members = [member for member in message.channel.members if not member.bot]
+        else:
             return
-
-        view = TranslationButtonView(message.content, message.author.id)
-        # Send a minimal reply with just the button (zero‑width space)
-        reply = await message.reply("\u200b", view=view, mention_author=False)
-
-        # Auto-delete after 5 minutes
-        async def delete_later():
-            await asyncio.sleep(300)
-            try:
-                await reply.delete()
-            except:
-                pass
-        asyncio.create_task(delete_later())
-
+        
+        # Group users by their preferred language
+        language_groups = {}
+        
+        for member in members:
+            # UPDATED: Pass guild to get_user_language for role checking
+            user_lang = translator.get_user_language(member.id, message.guild)
+            
+            # Check if we should translate for this user
+            if translator.should_translate_for_user(source_lang, user_lang, member.id, message.author.id):
+                # Add user to language group
+                if user_lang not in language_groups:
+                    language_groups[user_lang] = []
+                language_groups[user_lang].append(member.id)
+        
+        # If we have languages to translate to, send grouped translations
+        if language_groups:
+            logger.info(f"🎯 Translating to {len(language_groups)} language groups")
+            await send_grouped_translations(message, language_groups)
+            
     except Exception as e:
-        logger.error(f"Error attaching button: {e}")
-
+        logger.error(f"Error in auto-translation: {e}")
 # ========== COMMANDS ==========
 @bot.command(name="mylang")
 async def set_language(ctx):
