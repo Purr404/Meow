@@ -230,6 +230,15 @@ class SelectiveTranslator:
                         )
                     ''')
 
+                    # For PostgreSQL
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS welcome_channels (
+                            guild_id BIGINT PRIMARY KEY,
+                            channel_id BIGINT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+
                     sqlite_conn.commit()
                 logger.info("✅ SQLite tables initialized")
 
