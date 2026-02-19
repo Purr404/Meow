@@ -1071,7 +1071,12 @@ class Welcome(commands.Cog):
             await ctx.send("❌ You need administrator permission to use this command.")
 
 # ========END=========
-bot.add_cog(Welcome(bot))
+
+async def setup_hook():
+ 
+    await bot.add_cog(Welcome(bot))
+
+bot.setup_hook = setup_hook
 
 # ========== RUN BOT ==========
 if __name__ == "__main__":
