@@ -193,6 +193,13 @@ class SelectiveTranslator:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS welcome_channels (
+                        guild_id BIGINT PRIMARY KEY,
+                        channel_id BIGINT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
 
                 conn.commit()
                 cursor.close()
@@ -1082,7 +1089,12 @@ class Welcome(commands.Cog):
             await ctx.send("❌ You need administrator permission to use this command.")
 
 # ========END=========
+async def setup_hook():
+    await bot.add_cog(Welcome(bot))
+    # Optional: print loaded commands for debugging
+    print("✅ Cog added. Loaded commands:", [cmd.name for cmd in bot.commands])
 
+bot.setup_hook = setup_hook
 
 # ========== RUN BOT ==========
 if __name__ == "__main__":
