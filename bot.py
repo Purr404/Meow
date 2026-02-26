@@ -1096,7 +1096,7 @@ class Welcome(commands.Cog):
 
         template = random.choice(self.welcome_messages)
         welcome_text = template.format(
-            member=member.mention,
+            member=member.name,
             guild=member.guild.name,
             count=len(member.guild.members)
         )
