@@ -8,6 +8,7 @@ import sqlite3
 from datetime import datetime
 from deep_translator import GoogleTranslator
 translator = GoogleTranslator(source='auto', target='en')
+from langdetect import detect as lang_detect
 import logging
 from contextlib import closing
 import hashlib
@@ -385,9 +386,9 @@ class SelectiveTranslator:
             # ----- Google fallback -----
             if not translated:
                 logger.info(f"🔄 Using Google Translate for {target_lang}")
-                google_result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
-                if google_result and google_result.text:
-                    translated = google_result.text
+                google_result = self.google_translator.translate(text, target=target_lang, source=source_lang)
+                if google_result:
+                translated = google_result 
 
             if translated:
                 self.translation_cache[cache_key] = translated
@@ -473,21 +474,16 @@ class SelectiveTranslator:
 
     # Keep all other methods exactly the same
     def detect_language(self, text):
-        """Detect language of text"""
+        """Detect language using langdetect"""
         try:
             text = text.strip()
             if len(text) < 2:
                 return 'en'
-            
-            detection = self.google_translator.detect(text)
-            if detection and detection.lang:
-                lang_code = detection.lang
-                if '-' in lang_code:
-                    lang_code = lang_code.split('-')[0]
-                return lang_code
-            return 'en'
-        except Exception as e:
-            logger.error(f"Language detection error: {e}")
+            lang = lang_detect(text)
+            if '-' in lang:
+                lang = lang.split('-')[0]
+            return lang
+        except Exception:
             return 'en'
 
     def should_translate_for_user(self, message_lang, user_lang, user_id, message_author_id):
