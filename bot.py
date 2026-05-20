@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 import asyncio
 import sqlite3
 from datetime import datetime
-from googletrans import Translator as GoogleTranslator
+from deep_translator import GoogleTranslator
+translator = GoogleTranslator(source='auto', target='en')
 import logging
 from contextlib import closing
 import hashlib
