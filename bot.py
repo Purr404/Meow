@@ -388,7 +388,7 @@ class SelectiveTranslator:
                 logger.info(f"🔄 Using Google Translate for {target_lang}")
                 google_result = self.google_translator.translate(text, target=target_lang, source=source_lang)
                 if google_result:
-                translated = google_result 
+                    translated = google_result 
 
             if translated:
                 self.translation_cache[cache_key] = translated
