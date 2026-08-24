@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>🎯 Quiz Game – Discord Activity</title>
+
+    <!-- Discord Embedded App SDK -->
+    <script src="https://unpkg.com/@discord/embedded-app-sdk@latest/dist/embedded-app-sdk.js">
+    </script>
+
+    <style>
+        /* ---------- RESET & GLOBAL ---------- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(145deg, #1e1f29 0%, #2a2d3a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .game-container {
+            max-width: 700px;
+            width: 100%;
+            background: rgba(44, 47, 60, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: 40px;
+            padding: 30px 25px 35px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 2px rgba(88, 101, 242, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* ---------- HEADER ---------- */
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            font-weight: 600;
+        }
+
+        .game-title {
+            font-size: 26px;
+            background: linear-gradient(135deg, #f6d365, #fda085);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
+        }
+
+        .score-box {
+            background: #40435a;
+            padding: 8px 18px;
+            border-radius: 30px;
+            font-size: 20px;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+
+        .score-box span {
+            color: #ffd700;
+        }
+
+        /* ---------- PROGRESS BAR ---------- */
+        .progress-wrap {
+            width: 100%;
+            height: 10px;
+            background: #35384a;
+            border-radius: 20px;
+            margin-bottom: 30px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #43e97b, #38f9d7);
+            border-radius: 20px;
+            transition: width 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            box-shadow: 0 0 15px rgba(67, 233, 123, 0.4);
+        }
+
+        /* ---------- QUESTION CARD ---------- */
+        .question-card {
+            background: #363a4b;
+            border-radius: 24px;
+            padding: 25px 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 0 #21232f;
+            transition: transform 0.15s ease;
+        }
+
+        .question-text {
+            font-size: 22px;
+            font-weight: 500;
+            line-height: 1.4;
+            margin-bottom: 5px;
+            min-height: 70px;
+        }
+
+        .question-category {
+            font-size: 14px;
+            color: #b0b8d1;
+            background: #2f3344;
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 30px;
+            margin-bottom: 15px;
+        }
+
+        /* ---------- ANSWERS (GRID) ---------- */
+        .answers-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .answer-btn {
+            background: #2f3346;
+            border: none;
+            border-radius: 16px;
+            padding: 14px 10px;
+            font-size: 17px;
+            font-weight: 500;
+            color: #f0f2fa;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 5px 0 #1d1f2b;
+            text-align: left;
+            word-break: break-word;
+            position: relative;
+        }
+
+        .answer-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            background: #3d425a;
+            box-shadow: 0 7px 0 #1d1f2b;
+        }
+
+        .answer-btn:active:not(:disabled) {
+            transform: translateY(4px);
+            box-shadow: 0 1px 0 #1d1f2b;
+        }
+
+        .answer-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: translateY(2px);
+            box-shadow: 0 3px 0 #1d1f2b;
+        }
+
+        .answer-btn.correct {
+            background: #2ecc71;
+            box-shadow: 0 5px 0 #1a7a44;
+        }
+
+        .answer-btn.wrong {
+            background: #e74c3c;
+            box-shadow: 0 5px 0 #922b21;
+        }
+
+        .answer-btn.reveal-correct {
+            background: #2ecc71;
+            box-shadow: 0 5px 0 #1a7a44;
+        }
+
+        /* ---------- FEEDBACK & STATUS ---------- */
+        .feedback-area {
+            margin-top: 18px;
+            font-size: 18px;
+            font-weight: 500;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .feedback-area.correct {
+            color: #2ecc71;
+        }
+        .feedback-area.wrong {
+            color: #e74c3c;
+        }
+
+        /* ---------- START / END SCREEN ---------- */
+        .screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px 0;
+            animation: fadeSlideUp 0.6s ease forwards;
+        }
+
+        .screen h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #f6d365, #fda085);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .screen p {
+            font-size: 20px;
+            color: #c0c7e0;
+            max-width: 400px;
+            margin-bottom: 25px;
+        }
+
+        .btn-primary {
+            background: #5865f2;
+            border: none;
+            border-radius: 40px;
+            padding: 16px 48px;
+            font-size: 22px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 8px 0 #3b45b0;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary:hover {
+            background: #6d7af5;
+            transform: translateY(-3px);
+            box-shadow: 0 11px 0 #3b45b0;
+        }
+
+        .btn-primary:active {
+            transform: translateY(4px);
+            box-shadow: 0 4px 0 #3b45b0;
+        }
+
+        .end-score {
+            font-size: 72px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f6d365, #fda085);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 10px 0;
+        }
+
+        .end-stars {
+            font-size: 40px;
+            margin: 5px 0 15px;
+        }
+
+        .end-message {
+            font-size: 22px;
+            color: #d0d7f0;
+            margin-bottom: 20px;
+        }
+
+        /* ---------- ANIMATIONS ---------- */
+        @keyframes fadeSlideUp {
+            0% {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes popIn {
+            0% {
+                transform: scale(0.7);
+                opacity: 0;
+            }
+            70% {
+                transform: scale(1.08);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes shake {
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+            20% {
+                transform: translateX(-10px);
+            }
+            40% {
+                transform: translateX(10px);
+            }
+            60% {
+                transform: translateX(-6px);
+            }
+            80% {
+                transform: translateX(6px);
+            }
+        }
+
+        .shake {
+            animation: shake 0.4s ease;
+        }
+
+        @keyframes confettiDrop {
+            0% {
+                transform: translateY(-100px) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(400px) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        .confetti-piece {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            pointer-events: none;
+            z-index: 999;
+            animation: confettiDrop 2s ease-out forwards;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 550px) {
+            .game-container {
+                padding: 20px 15px;
+                border-radius: 28px;
+            }
+            .game-title {
+                font-size: 20px;
+            }
+            .question-text {
+                font-size: 18px;
+            }
+            .answers-grid {
+                grid-template-columns: 1fr;
+            }
+            .answer-btn {
+                padding: 12px 14px;
+                font-size: 15px;
+            }
+            .screen h1 {
+                font-size: 34px;
+            }
+            .end-score {
+                font-size: 50px;
+            }
+        }
+
+        /* ---------- HIDDEN ---------- */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="game-container" id="app">
+        <!-- HEADER -->
+        <div class="game-header">
+            <div class="game-title">🎯 Quiz Game</div>
+            <div class="score-box">💎 <span id="scoreDisplay">0</span></div>
+        </div>
+
+        <!-- PROGRESS BAR -->
+        <div class="progress-wrap">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <!-- START SCREEN -->
+        <div id="startScreen" class="screen">
+            <h1>🧠 Ready?</h1>
+            <p>Answer 20 hard questions across multiple categories. <br>Fast and correct = more points!</p>
+            <button class="btn-primary" id="startBtn">🚀 Start Quiz</button>
+        </div>
+
+        <!-- QUIZ AREA (hidden initially) -->
+        <div id="quizArea" class="hidden">
+            <div class="question-card">
+                <div class="question-category" id="categoryDisplay">📐 Math</div>
+                <div class="question-text" id="questionText">Loading question...</div>
+            </div>
+            <div class="answers-grid" id="answersContainer"></div>
+            <div class="feedback-area" id="feedback"></div>
+        </div>
+
+        <!-- END SCREEN (hidden initially) -->
+        <div id="endScreen" class="screen hidden">
+            <h1>🏁 Quiz Complete!</h1>
+            <div class="end-score" id="finalScore">0</div>
+            <div class="end-stars" id="starsDisplay">⭐⭐⭐</div>
+            <div class="end-message" id="endMessage">Great job!</div>
+            <button class="btn-primary" id="playAgainBtn">🔄 Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        //  1.  DISCORD SDK SETUP (optional – for embedded app)
+        // ============================================================
+        const APP_ID = 'YOUR_APPLICATION_ID'; // <-- CHANGE THIS
+        let sdk = null;
+        let channelId = null;
+
+        async function initDiscord() {
+            try {
+                sdk = new window.DiscordEmbeddedAppSDK(APP_ID);
+                const { channelId: cid } = await sdk.commands.getChannel();
+                channelId = cid;
+                console.log('✅ Discord SDK connected, channel:', channelId);
+            } catch (e) {
+                console.warn('⚠️ Discord SDK not available or not in embedded context. Running standalone.');
+            }
+        }
+        initDiscord();
+
+        // ============================================================
+        //  2.  AUDIO ENGINE (Web Audio API – no external files)
+        // ============================================================
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function ensureAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioCtx();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playTone(freq, duration, type = 'sine', volume = 0.3) {
+            try {
+                ensureAudio();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                // Silently fail if audio not available
+            }
+        }
+
+        function soundCorrect() {
+            // Ascending happy tone
+            playTone(523, 0.12);
+            setTimeout(() => playTone(659, 0.12), 100);
+            setTimeout(() => playTone(784, 0.18), 200);
+        }
+
+        function soundWrong() {
+            // Descending buzz
+            playTone(300, 0.25, 'sawtooth', 0.2);
+            setTimeout(() => playTone(200, 0.3, 'sawtooth', 0.2), 120);
+        }
+
+        function soundFanfare() {
+            // Simple celebratory arpeggio
+            const notes = [523, 659, 784, 1047];
+            notes.forEach((n, i) => {
+                setTimeout(() => playTone(n, 0.2, 'sine', 0.25), i * 150);
+            });
+        }
+
+        function soundStart() {
+            playTone(440, 0.15);
+            setTimeout(() => playTone(554, 0.15), 120);
+            setTimeout(() => playTone(659, 0.25), 240);
+        }
+
+        // ============================================================
+        //  3.  QUESTION POOL (60+ hard questions, multiple choice)
+        // ============================================================
+        const QUESTION_POOL = [
+            // --- MATH ---
+            { cat: '📐 Math', q: 'What is the smallest positive integer divisible by all numbers from 1 to 10?', opts: ['2520', '1260', '5040', '10080'], ans: 0 },
+            { cat: '📐 Math', q: 'A car travels at 60 km/h. How far in 2h15m?', opts: ['135 km', '120 km', '150 km', '130 km'], ans: 0 },
+            { cat: '📐 Math', q: 'Sum of two numbers is 30, difference is 10. Larger number?', opts: ['20', '15', '25', '10'], ans: 0 },
+            { cat: '📐 Math', q: 'Rectangle area: length 12 cm, width 8 cm?', opts: ['96 cm²', '80 cm²', '100 cm²', '64 cm²'], ans: 0 },
+            { cat: '📐 Math', q: 'A number increased by 20% becomes 60. Original?', opts: ['50', '48', '55', '40'], ans: 0 },
+            { cat: '📐 Math', q: 'Probability of picking a blue marble from 3R,4B,5G? (fraction)', opts: ['1/3', '2/5', '4/12', '3/12'], ans: 0 },
+            { cat: '📐 Math', q: '15% discount on $200. How much discount?', opts: ['$30', '$25', '$35', '$20'], ans: 0 },
+            { cat: '📐 Math', q: 'Square perimeter 36 cm. Area?', opts: ['81 cm²', '72 cm²', '90 cm²', '64 cm²'], ans: 0 },
+            { cat: '📐 Math', q: 'Phone costs $500 after 20% discount. Original?', opts: ['$625', '$600', '$650', '$580'], ans: 0 },
+            { cat: '📐 Math', q: 'Next in sequence: 2,3,5,9,17,?', opts: ['33', '31', '35', '29'], ans: 0 },
+            { cat: '📐 Math', q: 'Solve: 5x + 3 = 2x + 24', opts: ['7', '6', '8', '5'], ans: 0 },
+            { cat: '📐 Math', q: 'Price increased by 25% to 250. Original?', opts: ['200', '180', '220', '210'], ans: 0 },
+            { cat: '📐 Math', q: 'Train travels 180 km in 3h. How far in 5h?', opts: ['300 km', '280 km', '320 km', '250 km'], ans: 0 },
+
+            // --- SCIENCE ---
+            { cat: '🔬 Science', q: 'Chemical symbol for gold?', opts: ['Au', 'Ag', 'Fe', 'Cu'], ans: 0 },
+            { cat: '🔬 Science', q: 'Largest organ in the human body?', opts: ['Skin', 'Liver', 'Brain', 'Heart'], ans: 0 },
+            { cat: '🔬 Science', q: 'Red Planet?', opts: ['Mars', 'Venus', 'Jupiter', 'Saturn'], ans: 0 },
+            { cat: '🔬 Science', q: 'Powerhouse of the cell?', opts: ['Mitochondria', 'Nucleus', 'Ribosome', 'Golgi'], ans: 0 },
+            { cat: '🔬 Science', q: 'pH of pure water at 25°C?', opts: ['7', '6', '8', '5'], ans: 0 },
+            { cat: '🔬 Science', q: 'Speed of light (km/s) approx?', opts: ['300,000', '150,000', '500,000', '1,000,000'], ans: 0 },
+            { cat: '🔬 Science', q: 'Liquid at room temperature?', opts: ['Mercury', 'Lead', 'Gold', 'Silver'], ans: 0 },
+            { cat: '🔬 Science', q: 'Main gas in Earth’s atmosphere?', opts: ['Nitrogen', 'Oxygen', 'Carbon Dioxide', 'Argon'], ans: 0 },
+            { cat: '🔬 Science', q: 'Unit of force?', opts: ['Newton', 'Joule', 'Watt', 'Pascal'], ans: 0 },
+            { cat: '🔬 Science', q: 'Chemical formula for water?', opts: ['H₂O', 'CO₂', 'NaCl', 'CH₄'], ans: 0 },
+
+            // --- ENGLISH ---
+            { cat: '📘 English', q: 'Synonym of "parsimonious"?', opts: ['Stingy', 'Generous', 'Quick', 'Bright'], ans: 0 },
+            { cat: '📘 English', q: 'Antonym of "transient"?', opts: ['Permanent', 'Brief', 'Fast', 'Slow'], ans: 0 },
+            { cat: '📘 English', q: 'Rhetorical device: "Time is a thief"?', opts: ['Metaphor', 'Simile', 'Hyperbole', 'Personification'], ans: 0 },
+            { cat: '📘 English', q: 'Correct: Neither the officers nor the chief ___ present.', opts: ['was', 'were', 'am', 'are'], ans: 0 },
+            { cat: '📘 English', q: 'Idiom: "Bite the ___" (endure something unpleasant)', opts: ['bullet', 'apple', 'dust', 'tiger'], ans: 0 },
+            { cat: '📘 English', q: 'Past participle of "to ring" (bell)?', opts: ['rung', 'rang', 'ringed', 'runged'], ans: 0 },
+            { cat: '📘 English', q: '"She would have gone..." – which tense is "would have gone"?', opts: ['Conditional perfect', 'Past perfect', 'Future perfect', 'Present conditional'], ans: 0 },
+            { cat: '📘 English', q: 'Verb acting as noun: "Swimming is fun" – what is "swimming"?', opts: ['Gerund', 'Infinitive', 'Participle', 'Verb'], ans: 0 },
+
+            // --- HISTORY ---
+            { cat: '📜 History', q: 'In which year did World War II end?', opts: ['1945', '1944', '1946', '1943'], ans: 0 },
+            { cat: '📜 History', q: 'First US president?', opts: ['George Washington', 'John Adams', 'Thomas Jefferson', 'Abraham Lincoln'], ans: 0 },
+            { cat: '📜 History', q: 'Year the Titanic sank?', opts: ['1912', '1910', '1914', '1905'], ans: 0 },
+            { cat: '📜 History', q: 'First man on the moon?', opts: ['Neil Armstrong', 'Buzz Aldrin', 'Yuri Gagarin', 'John Glenn'], ans: 0 },
+            { cat: '📜 History', q: 'Berlin Wall fell in?', opts: ['1989', '1990', '1988', '1991'], ans: 0 },
+            { cat: '📜 History', q: 'Empire of Genghis Khan?', opts: ['Mongol Empire', 'Ottoman Empire', 'Roman Empire', 'Persian Empire'], ans: 0 },
+            { cat: '📜 History', q: 'Event that started WWI?', opts: ['Assassination of Franz Ferdinand', 'Invasion of Poland', 'Battle of Waterloo', 'Boston Tea Party'], ans: 0 },
+
+            // --- GEOGRAPHY ---
+            { cat: '🌍 Geography', q: 'Capital of France?', opts: ['Paris', 'London', 'Berlin', 'Madrid'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Largest continent by area?', opts: ['Asia', 'Africa', 'North America', 'Europe'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Longest river in the world?', opts: ['Nile', 'Amazon', 'Yangtze', 'Mississippi'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Capital of Japan?', opts: ['Tokyo', 'Seoul', 'Beijing', 'Bangkok'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Most populous country?', opts: ['India', 'China', 'USA', 'Indonesia'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Smallest country in the world?', opts: ['Vatican City', 'Monaco', 'San Marino', 'Liechtenstein'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Highest mountain?', opts: ['Mount Everest', 'K2', 'Kangchenjunga', 'Lhotse'], ans: 0 },
+            { cat: '🌍 Geography', q: 'Largest ocean?', opts: ['Pacific', 'Atlantic', 'Indian', 'Arctic'], ans: 0 },
+
+            // --- POP CULTURE ---
+            { cat: '🎬 Entertainment', q: 'Creator of Mickey Mouse?', opts: ['Walt Disney', 'Charles M. Schulz', 'Jim Henson', 'Stan Lee'], ans: 0 },
+            { cat: '🎬 Entertainment', q: 'Highest-grossing film (unadjusted)?', opts: ['Avatar', 'Titanic', 'Star Wars', 'Avengers: Endgame'], ans: 0 },
+            { cat: '🎬 Entertainment', q: 'Actor who played Iron Man?', opts: ['Robert Downey Jr.', 'Chris Evans', 'Chris Hemsworth', 'Scarlett Johansson'], ans: 0 },
+            { cat: '🎬 Entertainment', q: 'Band that performed "Bohemian Rhapsody"?', opts: ['Queen', 'The Beatles', 'Led Zeppelin', 'Pink Floyd'], ans: 0 },
+            { cat: '🎬 Entertainment', q: 'Protagonist of The Legend of Zelda?', opts: ['Link', 'Zelda', 'Ganon', 'Mario'], ans: 0 },
+            { cat: '🎬 Entertainment', q: 'Author of Harry Potter?', opts: ['J.K. Rowling', 'J.R.R. Tolkien', 'Stephen King', 'George R.R. Martin'], ans: 0 },
+            { cat: '🎬 Entertainment', q: 'Fictional city in Batman?', opts: ['Gotham', 'Metropolis', 'Star City', 'Central City'], ans: 0 },
+
+            // --- LOGIC (riddles) ---
+            { cat: '🧠 Logic', q: 'A man says: "Brothers and sisters have I none, but that man\'s father is my father\'s son." Who is in the portrait?', opts: ['His son', 'His father', 'His brother', 'Himself'], ans: 0 },
+            { cat: '🧠 Logic', q: 'A rooster lays an egg on a barn. Which way does it roll?', opts: ["It doesn't roll – roosters don't lay eggs", 'Down', 'Up', 'Left'], ans: 0 },
+            { cat: '🧠 Logic', q: 'Two coins add to 30 cents, one is not a nickel. What are they?', opts: ['Quarter and nickel', 'Two nickels', 'Dime and dime', 'Half-dollar'], ans: 0 },
+            { cat: '🧠 Logic', q: 'If tomorrow is Sunday, what day was yesterday?', opts: ['Thursday', 'Friday', 'Saturday', 'Wednesday'], ans: 0 },
+            { cat: '🧠 Logic', q: 'Bat and ball cost $1.10. Bat costs $1 more. Ball cost in cents?', opts: ['5', '10', '0.05', '50'], ans: 0 },
+            { cat: '🧠 Logic', q: 'Number sequence: 1, 11, 21, 1211, 111221, ?', opts: ['312211', '1112221', '311221', '321211'], ans: 0 },
+            { cat: '🧠 Logic', q: 'A farmer has 17 cows; all but 9 die. How many left?', opts: ['9', '8', '17', '0'], ans: 0 },
+            { cat: '🧠 Logic', q: 'Brick weighs 3 lbs plus half a brick. Weight?', opts: ['6 lbs', '4 lbs', '5 lbs', '3 lbs'], ans: 0 },
+            { cat: '🧠 Logic', q: 'Snail climbs 3 ft/day, slips 2 ft/night. 30‑ft well: how many days?', opts: ['28', '30', '27', '29'], ans: 0 },
+        ];
+
+        // ============================================================
+        //  4.  GAME STATE
+        // ============================================================
+        const TOTAL_QUESTIONS = 20;
+        let questions = [];
+        let currentIndex = 0;
+        let score = 0;
+        let answered = false;
+        let timer = null;
+
+        // DOM refs
+        const startScreen = document.getElementById('startScreen');
+        const quizArea = document.getElementById('quizArea');
+        const endScreen = document.getElementById('endScreen');
+        const questionText = document.getElementById('questionText');
+        const categoryDisplay = document.getElementById('categoryDisplay');
+        const answersContainer = document.getElementById('answersContainer');
+        const feedback = document.getElementById('feedback');
+        const progressBar = document.getElementById('progressBar');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const finalScore = document.getElementById('finalScore');
+        const starsDisplay = document.getElementById('starsDisplay');
+        const endMessage = document.getElementById('endMessage');
+
+        // ============================================================
+        //  5.  GAME FUNCTIONS
+        // ============================================================
+        function shuffleArray(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        function pickQuestions(pool, count) {
+            const shuffled = shuffleArray([...pool]);
+            return shuffled.slice(0, count);
+        }
+
+        function startGame() {
+            soundStart();
+            questions = pickQuestions(QUESTION_POOL, TOTAL_QUESTIONS);
+            currentIndex = 0;
+            score = 0;
+            answered = false;
+            updateScore();
+            updateProgress();
+            showScreen('quiz');
+            showQuestion();
+        }
+
+        function showQuestion() {
+            if (currentIndex >= questions.length) {
+                endGame();
+                return;
+            }
+            const q = questions[currentIndex];
+            questionText.textContent = q.q;
+            categoryDisplay.textContent = q.cat;
+            feedback.textContent = '';
+            feedback.className = 'feedback-area';
+            answered = false;
+
+            // Build answer buttons
+            answersContainer.innerHTML = '';
+            const labels = ['A', 'B', 'C', 'D'];
+            q.opts.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'answer-btn';
+                btn.textContent = `${labels[idx]}. ${opt}`;
+                btn.dataset.index = idx;
+                btn.addEventListener('click', () => handleAnswer(idx));
+                answersContainer.appendChild(btn);
+            });
+
+            // Enable all buttons
+            document.querySelectorAll('.answer-btn').forEach(b => b.disabled = false);
+
+            // Animate question card
+            const card = document.querySelector('.question-card');
+            card.style.animation = 'none';
+            requestAnimationFrame(() => {
+                card.style.animation = 'popIn 0.35s ease forwards';
+            });
+        }
+
+        function handleAnswer(selectedIdx) {
+            if (answered) return;
+            answered = true;
+            const q = questions[currentIndex];
+            const isCorrect = (selectedIdx === q.ans);
+
+            // Disable all buttons
+            document.querySelectorAll('.answer-btn').forEach(b => b.disabled = true);
+
+            // Highlight correct/wrong
+            const btns = document.querySelectorAll('.answer-btn');
+            btns.forEach((btn, idx) => {
+                if (idx === q.ans) {
+                    btn.classList.add('correct');
+                } else if (idx === selectedIdx && !isCorrect) {
+                    btn.classList.add('wrong');
+                }
+            });
+
+            // Update score
+            if (isCorrect) {
+                score += 10;
+                soundCorrect();
+                feedback.textContent = '✅ Correct! +10 pts';
+                feedback.className = 'feedback-area correct';
+            } else {
+                soundWrong();
+                feedback.textContent = `❌ Wrong! The answer was: ${q.opts[q.ans]}`;
+                feedback.className = 'feedback-area wrong';
+                // shake container
+                const container = document.querySelector('.game-container');
+                container.classList.add('shake');
+                setTimeout(() => container.classList.remove('shake'), 500);
+            }
+
+            updateScore();
+            updateProgress();
+
+            // Move to next question after delay
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+                currentIndex++;
+                showQuestion();
+            }, 1800);
+        }
+
+        function updateScore() {
+            scoreDisplay.textContent = score;
+        }
+
+        function updateProgress() {
+            const pct = (currentIndex / TOTAL_QUESTIONS) * 100;
+            progressBar.style.width = `${pct}%`;
+        }
+
+        function endGame() {
+            showScreen('end');
+            finalScore.textContent = score;
+            const stars = score >= 180 ? '⭐⭐⭐' : score >= 120 ? '⭐⭐' : '⭐';
+            starsDisplay.textContent = stars;
+            const messages = {
+                '⭐⭐⭐': '🏆 Outstanding! You\'re a quiz master!',
+                '⭐⭐': '👍 Great job! Keep learning!',
+                '⭐': '📚 Good effort! Study more and try again!'
+            };
+            endMessage.textContent = messages[stars] || 'Thanks for playing!';
+            soundFanfare();
+            // Confetti for high score
+            if (score >= 150) launchConfetti();
+        }
+
+        function launchConfetti() {
+            const colors = ['#f94144', '#f3722c', '#f8961e', '#f9c74f', '#90be6d', '#43aa8b', '#577590'];
+            for (let i = 0; i < 60; i++) {
+                const piece = document.createElement('div');
+                piece.className = 'confetti-piece';
+                piece.style.left = Math.random() * 100 + '%';
+                piece.style.top = '-10px';
+                piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+                piece.style.width = (Math.random() * 8 + 4) + 'px';
+                piece.style.height = (Math.random() * 8 + 4) + 'px';
+                piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+                piece.style.animationDelay = Math.random() * 1.5 + 's';
+                document.body.appendChild(piece);
+                setTimeout(() => piece.remove(), 3000);
+            }
+        }
+
+        function showScreen(screen) {
+            startScreen.classList.add('hidden');
+            quizArea.classList.add('hidden');
+            endScreen.classList.add('hidden');
+            if (screen === 'start') startScreen.classList.remove('hidden');
+            else if (screen === 'quiz') quizArea.classList.remove('hidden');
+            else if (screen === 'end') endScreen.classList.remove('hidden');
+        }
+
+        // ============================================================
+        //  6.  EVENT LISTENERS
+        // ============================================================
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('playAgainBtn').addEventListener('click', () => {
+            startGame();
+        });
+
+        // Show start screen initially
+        showScreen('start');
+
+        // ============================================================
+        //  7.  OPTIONAL: SEND SCORE TO DISCORD CHANNEL (via SDK)
+        // ============================================================
+        async function sendScoreToDiscord(score, total) {
+            if (!sdk || !channelId) return;
+            try {
+                await sdk.commands.sendMessage({
+                    channelId: channelId,
+                    content: `🎯 **Quiz finished!** I scored **${score}** out of **${total * 10}** points! 🏆`,
+                });
+            } catch (e) {
+                console.warn('Could not send message to Discord:', e);
+            }
+        }
+
+        // Override endGame to optionally send score
+        const originalEnd = endGame;
+        endGame = function() {
+            originalEnd();
+            if (score > 0) {
+                sendScoreToDiscord(score, TOTAL_QUESTIONS);
+            }
+        };
+
+        console.log('🎯 Quiz Game loaded! Ready to play.');
+    </script>
+</body>
+</html>
